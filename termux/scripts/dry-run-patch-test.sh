@@ -110,6 +110,29 @@ print(f"    (was: {td})")
 PYEOF
 
 echo ""
+echo "=== Patch 1d: package.json — remove root postinstall + prepare scripts ==="
+python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+scripts = pkg.get("scripts", {})
+remove_set = {"postinstall", "prepare"}
+removed = []
+for s in remove_set:
+    if s in scripts:
+        old_val = scripts.pop(s)
+        removed.append(f"{s}={old_val!r}")
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+
+print(f"    [1d] Removed {len(removed)} root scripts: {removed}")
+PYEOF
+
+echo ""
 echo "=== Verification ==="
 
 python3 - "$TMP_DIR/package.json" "$TMP_DIR/bunfig.toml" <<'PYEOF'
@@ -151,6 +174,18 @@ else:
 td = pkg.get("trustedDependencies", [])
 checks.append(("trustedDependencies is empty (all install scripts skipped)",
                td, []))
+
+# Patch 1d checks — postinstall + prepare removed from scripts
+scripts = pkg.get("scripts", {})
+checks.append(("postinstall removed from scripts",
+               "postinstall" not in scripts, True))
+checks.append(("prepare removed from scripts",
+               "prepare" not in scripts, True))
+# Other scripts should still be there
+checks.append(("dev script preserved",
+               "dev" in scripts, True))
+checks.append(("typecheck script preserved",
+               "typecheck" in scripts, True))
 
 # Existing fields intact
 checks.append(("name", pkg.get("name"), "opencode"))

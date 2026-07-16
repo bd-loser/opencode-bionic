@@ -455,6 +455,100 @@ print(len(pkg.get('trustedDependencies', [])))
 fi
 
 # =============================================================================
+# PATCH 1d: package.json — remove root postinstall + prepare scripts
+# =============================================================================
+#
+# Root cause:
+#   opencode's root package.json has:
+#     "postinstall": "bun run --cwd packages/core fix-node-pty"
+#     "prepare": "husky"
+#
+#   These are ROOT package scripts — they ALWAYS run on `bun install`,
+#   regardless of trustedDependencies (which only affects DEPENDENCY install
+#   scripts). The `prepare` script runs `husky` (git hooks manager) which
+#   spawns child processes. On Termux with MTE, this crashes:
+#     Pointer tag for 0x... was truncated
+#     error: prepare script from "opencode" terminated by SIGABRT
+#
+#   The postinstall script (fix-node-pty) ran OK in testing — it just chmods
+#   spawn-helper files. But it's pointless on Termux because:
+#   - node-pty is NOT used under Bun (bun-pty is used instead)
+#   - The chmod targets node-pty/prebuilds/*/spawn-helper which don't exist
+#     when node-pty's install script was skipped (Patch 1c)
+#   So removing it is safe and avoids any future MTE issue.
+#
+#   The prepare script (husky) is for opencode DEVELOPERS to set up git hooks.
+#   It's completely unnecessary for RUNNING opencode on Termux.
+#
+# Fix:
+#   Remove both `postinstall` and `prepare` from the root package.json scripts.
+#   This is equivalent to `bun install --ignore-scripts` but only for the root
+#   package's own scripts (dependency install scripts were already skipped by
+#   Patch 1c's empty trustedDependencies).
+#
+#   If you later need to develop opencode itself (commit hooks, etc.), restore
+#   these scripts or run them manually.
+# =============================================================================
+
+echo ""
+echo "=== Patch 1d: package.json — remove root postinstall + prepare scripts ==="
+
+# Check current state — list which target scripts are present
+CURRENT_SCRIPTS=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+scripts = pkg.get('scripts', {})
+remove_set = {'postinstall', 'prepare'}
+found = [s for s in scripts if s in remove_set]
+print(','.join(found) if found else 'NONE')
+" 2>/dev/null)
+
+if [ "$CURRENT_SCRIPTS" = "NONE" ]; then
+  skip "postinstall + prepare already removed from scripts"
+else
+  info "current root scripts to remove: $CURRENT_SCRIPTS"
+
+  python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+scripts = pkg.get("scripts", {})
+remove_set = {"postinstall", "prepare"}
+removed = []
+for s in remove_set:
+    if s in scripts:
+        old_val = scripts.pop(s)
+        removed.append(f"{s}={old_val!r}")
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+
+print(f"    [1d] Removed {len(removed)} root scripts:")
+for r in removed:
+    print(f"       - {r}")
+print(f"    Remaining scripts: {list(scripts.keys())}")
+PYEOF
+
+  # Verify
+  AFTER_SCRIPTS=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+scripts = pkg.get('scripts', {})
+found = [s for s in ['postinstall', 'prepare'] if s in scripts]
+print(','.join(found) if found else 'NONE')
+" 2>/dev/null)
+
+  if [ "$AFTER_SCRIPTS" = "NONE" ]; then
+    ok "postinstall + prepare removed from root scripts"
+  else
+    fail "scripts still present: $AFTER_SCRIPTS"
+  fi
+fi
+
+# =============================================================================
 # PATCH 2: Verify @opentui/solid and @opentui/keymap still work with override
 # =============================================================================
 #

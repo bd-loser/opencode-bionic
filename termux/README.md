@@ -61,7 +61,17 @@ The changes are in `package.json` and `bunfig.toml` (no source files modified):
     //   - protobufjs: pure JS fallback works
     //   - tree-sitter-*: only .wasm files used (via web-tree-sitter WASM runtime)
     //   - electron: not relevant for Android
-  ]
+  ],
+  "scripts": {
+    // postinstall + prepare REMOVED — they're ROOT package scripts that
+    // ALWAYS run on `bun install` (trustedDependencies only affects deps).
+    // postinstall (fix-node-pty) is pointless when node-pty isn't used.
+    // prepare (husky) sets up git hooks for opencode development — not
+    // needed to RUN opencode, and husky crashes with MTE SIGABRT.
+    "dev": "...",
+    "typecheck": "...",
+    // ... (other scripts preserved)
+  }
 }
 ```
 
@@ -90,11 +100,33 @@ plus runtime checks (LD_PRELOAD shim, MEMTAG_OPTIONS, clipboard tool).
 
 | File | Purpose |
 |---|---|
-| `termux/apply-termux-patches.sh` | Idempotent patcher: edits `package.json`, verifies env |
+| `termux/apply-termux-patches.sh` | Idempotent patcher: edits `package.json` + `bunfig.toml`, verifies env |
 | `termux/setup-opencode-termux.sh` | One-shot setup: clone → `bun install` → patch → `bun install` |
 | `termux/run-opencode-termux.sh` | Launcher: sets env, verifies shim, execs `bun run` |
+| `termux/test-opentui-isolated.sh` | **Smoke test**: verifies @xincli/opentui-core + @opentui/solid work in isolation (3 deps, no opencode) |
 | `termux/README.md` | This file |
 | `termux/scripts/dry-run-patch-test.sh` | Self-test for the JSON patch logic |
+
+## Isolated Opentui Smoke Test (run this FIRST)
+
+Before fighting with opencode's 2000+ dependencies, verify the opentui layer
+works in isolation. This test creates a minimal project with only 3 deps
+(`@xincli/opentui-core`, `@xincli/opentui-core-android-arm64`, `@opentui/solid`)
+and renders a `<box>` with a `<text>` child for 3 seconds.
+
+```bash
+bash termux/test-opentui-isolated.sh
+```
+
+**If this test passes**: opentui FFI works, @opentui/solid@0.4.3 is API-compatible
+with @xincli/opentui-core@0.4.8. Any opencode failure is in opencode itself
+(bun-pty, sqlite, opencode's own code).
+
+**If this test fails**: the error tells you exactly what's broken:
+- "opentui is not supported on the current platform" → .so not found
+- "undefined symbol: opentui_*" → ABI mismatch (rebuild .so)
+- "Pointer tag ... truncated" + SIGABRT → MTE issue (check launcher)
+- "Cannot find export X in @xincli/opentui-core" → solid API break (need @xincli/opentui-solid fork)
 
 ## Why This Works (Root-Cause Analysis)
 
@@ -224,6 +256,23 @@ SIGABRT) and `node_modules` is in a partially-installed state. Fix:
 rm -rf node_modules
 bun install
 ```
+
+### `bun install` fails with "prepare script from opencode terminated by SIGABRT"
+
+The ROOT `package.json` has `"prepare": "husky"` which runs after `bun install`.
+`husky` (git hooks manager) spawns child processes that trigger the same MTE
+pointer truncation as the dependency install scripts. `trustedDependencies`
+only affects DEPENDENCY install scripts — root package scripts ALWAYS run.
+
+The patch script removes `prepare` (and `postinstall: fix-node-pty` which is
+also pointless on Termux) from the root scripts. If you hit this, ensure
+Patch 1d ran:
+```bash
+python3 -c "import json; s=json.load(open('package.json'))['scripts']; print('prepare' in s, 'postinstall' in s)"
+# Should print: False False
+```
+
+If it prints `True`, re-run `bash termux/apply-termux-patches.sh`.
 
 ### opencode crashes on startup with SIGABRT
 
