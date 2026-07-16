@@ -99,9 +99,13 @@ info "Running build-termux.ts..."
 
 cd "$OPENCODE_ROOT/packages/opencode"
 
+# Capture exit code without triggering set -e (temporarily disable it).
+# Without this, a non-zero exit would kill the script before we could
+# print a useful error message; the BUILD_EXIT check below would be dead.
+set +e
 "$BUN_BIN" run script/build-termux.ts
-
 BUILD_EXIT=$?
+set -e
 
 if [ "$BUILD_EXIT" -ne 0 ]; then
   fail "build-termux.ts failed (exit $BUILD_EXIT)"

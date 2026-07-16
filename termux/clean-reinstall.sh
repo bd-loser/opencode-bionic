@@ -52,29 +52,11 @@ echo "=== Step 1: Delete node_modules + bun.lock ==="
 if [ -d node_modules ]; then
   NM_SIZE=$(du -sh node_modules 2>/dev/null | cut -f1 || echo "?")
   info "node_modules exists ($NM_SIZE) — deleting (this may take a minute on slow fs)"
-  rm -rf node_modules
-  # Wait for deletion to complete — on Termux's slow filesystem, rm -rf on
-  # 4000+ packages can return before the directory is fully gone.
-  echo -n "  waiting for deletion to complete"
-  for i in $(seq 1 60); do
-    if [ ! -d node_modules ]; then
-      echo ""
-      ok "node_modules deleted"
-      break
-    fi
-    echo -n "."
-    sleep 1
-    if [ $i -eq 60 ]; then
-      echo ""
-      warn "node_modules still exists after 60s — trying again"
-      rm -rf node_modules
-      sleep 2
-      if [ -d node_modules ]; then
-        fail "could not delete node_modules after 2 attempts"
-      fi
-      ok "node_modules deleted (second attempt)"
-    fi
-  done
+  # rm -rf is synchronous — if it returned, the directory is gone. If it
+  # failed (permissions, in-use), the error surfaces immediately.
+  rm -rf node_modules || fail "could not delete node_modules (check permissions / open files)"
+  [ ! -d node_modules ] || fail "node_modules still exists after rm -rf (filesystem issue?)"
+  ok "node_modules deleted"
 else
   ok "node_modules already gone"
 fi

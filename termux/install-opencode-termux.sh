@@ -103,9 +103,19 @@ export MEMTAG_OPTIONS=off
 
 # LD_PRELOAD the bun-termux shim — intercepts SELinux-restricted syscalls
 # (openat on / and /data, linkat, symlinkat, etc.) that the compiled binary
-# still calls during module resolution.
-SHIM="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
-if [ -f "$SHIM" ]; then
+# still calls during module resolution. Try a few candidate paths in case
+# bun-termux is installed under a non-standard PREFIX.
+SHIM=""
+for candidate in \
+  "$PREFIX/lib/bun-termux/libbun-android-fix.so" \
+  "/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
+do
+  if [ -f "$candidate" ]; then
+    SHIM="$candidate"
+    break
+  fi
+done
+if [ -n "$SHIM" ]; then
   if [ -z "${LD_PRELOAD:-}" ]; then
     export LD_PRELOAD="$SHIM"
   else
@@ -114,6 +124,8 @@ if [ -f "$SHIM" ]; then
       *) export LD_PRELOAD="$SHIM:$LD_PRELOAD" ;;
     esac
   fi
+else
+  echo "warning: bun-termux LD_PRELOAD shim not found — FFI may crash" >&2
 fi
 
 # TMPDIR — Android has no /tmp; the shim translates /tmp → $TMPDIR
@@ -150,7 +162,8 @@ echo "=========================================="
 echo "Install complete!"
 echo "=========================================="
 echo ""
-echo "Binary:  $PREFIX/lib/opencode/opencode (126 MB)"
+INSTALLED_SIZE=$(du -h "$PREFIX/lib/opencode/opencode" 2>/dev/null | cut -f1 || echo "?")
+echo "Binary:  $PREFIX/lib/opencode/opencode ($INSTALLED_SIZE)"
 echo "Wrapper: $PREFIX/bin/opencode"
 echo ""
 echo "Now you can run opencode from anywhere:"

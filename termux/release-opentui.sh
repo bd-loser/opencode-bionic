@@ -116,21 +116,29 @@ for run in data.get('workflow_runs', []):
   ok "run started: $run_id"
   info "  https://github.com/${REPO}/actions/runs/${run_id}"
 
-  # Poll for completion
-  info "waiting for completion..."
+  # Poll for completion (cap at 30 min — GH Actions jobs shouldn't take longer;
+  # if they do, something is wedged and we'd rather fail loud than hang forever).
+  info "waiting for completion (max 30 min)..."
   local status="in_progress"
   local conclusion=""
+  local max_iters=120  # 120 * 15s = 30 min
+  local iter=0
   while [ "$status" != "completed" ]; do
+    if [ "$iter" -ge "$max_iters" ]; then
+      echo ""
+      fail "$label workflow did not complete within 30 min (run: https://github.com/${REPO}/actions/runs/${run_id})"
+    fi
     sleep 15
+    iter=$((iter + 1))
     local run_data
     run_data=$(curl -s \
       -H "Accept: application/vnd.github+json" \
       -H "Authorization: Bearer ${GH_TOKEN}" \
       -H "X-GitHub-Api-Version: 2022-11-28" \
       "${API}/actions/runs/${run_id}" 2>&1)
-    status=$(echo "$run_data" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])" 2>/dev/null)
-    conclusion=$(echo "$run_data" | python3 -c "import json,sys; print(json.load(sys.stdin).get('conclusion','') or 'pending')" 2>/dev/null)
-    echo -ne "\r  status: ${status}/${conclusion}    "
+    status=$(echo "$run_data" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])" 2>/dev/null || echo "unknown")
+    conclusion=$(echo "$run_data" | python3 -c "import json,sys; print(json.load(sys.stdin).get('conclusion','') or 'pending')" 2>/dev/null || echo "pending")
+    echo -ne "\r  status: ${status}/${conclusion} (${iter}/${max_iters})    "
   done
   echo ""
 

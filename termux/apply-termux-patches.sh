@@ -88,7 +88,7 @@ set -euo pipefail
 # which means we no longer need the `overrides` hack — we can use
 # clean catalog pins with npm: aliases instead.
 XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
-XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.10}"
+XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.11}"
 XINCLI_REACT_VERSION="${XINCLI_REACT_VERSION:-0.4.10}"
 XINCLI_SOLID_VERSION="${XINCLI_SOLID_VERSION:-0.4.10}"
 XINCLI_KEYMAP_VERSION="${XINCLI_KEYMAP_VERSION:-0.4.10}"
@@ -209,15 +209,23 @@ echo "=== Patch 1: Root package.json — clean catalog pins (v2, no overrides) =
 
 ROOT_PKG_JSON="$OPENCODE_ROOT/package.json"
 
-# Idempotency: check if all 3 catalog pins already present with correct version
+# Idempotency: check all 3 catalog pins AND optionalDependencies AND overrides
+# are at the target versions. Skipping when only the catalog is up-to-date
+# would leave a stale optionalDeps/overrides entry when only the android
+# version was bumped — which was the bug that caused nested 0.4.10 to keep
+# bundling instead of 0.4.11.
 CATALOG_OK=true
-for pkg_name in "@opentui/core" "@opentui/solid" "@opentui/keymap"; do
-  case "$pkg_name" in
-    "@opentui/core")   expected="npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}" ;;
-    "@opentui/solid")  expected="npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}" ;;
-    "@opentui/keymap") expected="npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}" ;;
-  esac
-  result=$(verify_json_key "$ROOT_PKG_JSON" "pkg[\"workspaces\"][\"catalog\"][\"${pkg_name}\"]" "$expected" 2>/dev/null || echo "MISSING")
+declare -A idempo_checks=(
+  ["catalog[@opentui/core]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/core\"]=npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
+  ["catalog[@opentui/solid]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/solid\"]=npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}"
+  ["catalog[@opentui/keymap]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/keymap\"]=npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}"
+  ["optionalDependencies[android-arm64]"]="pkg[\"optionalDependencies\"][\"@xincli/opentui-core-android-arm64\"]=${XINCLI_ANDROID_VERSION}"
+  ["overrides[android-arm64]"]="pkg[\"overrides\"][\"@xincli/opentui-core-android-arm64\"]=${XINCLI_ANDROID_VERSION}"
+)
+for check_name in "${!idempo_checks[@]}"; do
+  expr="${idempo_checks[$check_name]%=*}"
+  expected="${idempo_checks[$check_name]#*=}"
+  result=$(verify_json_key "$ROOT_PKG_JSON" "$expr" "$expected" 2>/dev/null || echo "MISSING")
   if [ "$result" != "OK" ]; then
     CATALOG_OK=false
     break
@@ -225,7 +233,7 @@ for pkg_name in "@opentui/core" "@opentui/solid" "@opentui/keymap"; do
 done
 
 if [ "$CATALOG_OK" = "true" ]; then
-  skip "all 3 catalog pins already present (@xincli @ ${XINCLI_CORE_VERSION})"
+  skip "all catalog pins, optionalDeps, and overrides already at target versions"
 else
   info "patching: $ROOT_PKG_JSON"
   info "  current catalog value: ${CURRENT_CATALOG:-<none>}"
@@ -280,10 +288,29 @@ old = opts.get("@xincli/opentui-core-android-arm64", "<none>")
 opts["@xincli/opentui-core-android-arm64"] = "${XINCLI_ANDROID_VERSION}"
 print(f"    [1c] optionalDependencies['@xincli/opentui-core-android-arm64']: {old} -> ${XINCLI_ANDROID_VERSION}")
 
-# Mark the package.json as patched
+# Force ALL nested resolutions of the android-arm64 native package to the
+# fixed version. Without this override, @xincli/opentui-core@0.4.10 pulls
+# in its own pinned android-arm64@0.4.10 (with the broken new URL() asset
+# pattern) as a nested optionalDependency, so `bun build --compile` bundles
+# stale JS from the 0.4.10 copy instead of the 0.4.11 fix.
+overrides = pkg.setdefault("overrides", {})
+old_ovr = overrides.get("@xincli/opentui-core-android-arm64", "<none>")
+overrides["@xincli/opentui-core-android-arm64"] = "${XINCLI_ANDROID_VERSION}"
+print(f"    [1c2] overrides['@xincli/opentui-core-android-arm64']: {old_ovr} -> ${XINCLI_ANDROID_VERSION}")
+
+# Mark the package.json as patched. Record ALL 5 target versions so mixed
+# releases (e.g. android-arm64@0.4.11 while core is still 0.4.10) are visible
+# in the marker instead of collapsing to a single field that misrepresents state.
 pkg["_opencodeBionic"] = {
     "patched": True,
     "version": "${XINCLI_CORE_VERSION}",
+    "versions": {
+        "core":              "${XINCLI_CORE_VERSION}",
+        "solid":             "${XINCLI_SOLID_VERSION}",
+        "keymap":            "${XINCLI_KEYMAP_VERSION}",
+        "react":             "${XINCLI_REACT_VERSION}",
+        "android_arm64":     "${XINCLI_ANDROID_VERSION}",
+    },
     "marker": "${PATCH_MARKER}",
     "approach": "clean-catalog-pins-v2",
     "note": "Patched by apply-termux-patches.sh for Termux/Android. Safe to remove this key."
@@ -302,12 +329,14 @@ PYEOF
   V3=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["workspaces"]["catalog"]["@opentui/keymap"]' "npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}")
   V4=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["optionalDependencies"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
   V5=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["_opencodeBionic"]["marker"]' "${PATCH_MARKER}")
+  V6=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
 
   [ "$V1" = "OK" ] && ok "catalog[@opentui/core] → npm:@xincli/opentui-core verified" || fail "catalog[@opentui/core] NOT verified (got: $V1)"
   [ "$V2" = "OK" ] && ok "catalog[@opentui/solid] → npm:@xincli/opentui-solid verified" || fail "catalog[@opentui/solid] NOT verified (got: $V2)"
   [ "$V3" = "OK" ] && ok "catalog[@opentui/keymap] → npm:@xincli/opentui-keymap verified" || fail "catalog[@opentui/keymap] NOT verified (got: $V3)"
   [ "$V4" = "OK" ] && ok "optionalDependencies[@xincli/opentui-core-android-arm64] verified" || fail "optionalDependency NOT verified (got: $V4)"
   [ "$V5" = "OK" ] && ok "marker _opencodeBionic verified" || fail "marker NOT verified (got: $V5)"
+  [ "$V6" = "OK" ] && ok "overrides[@xincli/opentui-core-android-arm64] verified" || fail "override NOT verified (got: $V6)"
 fi
 
 # =============================================================================

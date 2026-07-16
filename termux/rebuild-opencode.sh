@@ -44,7 +44,16 @@ info()  { echo -e "  ${MUTED}       $*${NC}"; }
 header(){ echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ── @xincli target versions ──────────────────────────────────────────────────
+# Each var is independently overridable. Individual per-package versions
+# matter when the .so lags/leads the JS packages (e.g. android-arm64@0.4.11
+# fix while core is still on 0.4.10).
 XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
+XINCLI_SOLID_VERSION="${XINCLI_SOLID_VERSION:-$XINCLI_CORE_VERSION}"
+XINCLI_KEYMAP_VERSION="${XINCLI_KEYMAP_VERSION:-$XINCLI_CORE_VERSION}"
+XINCLI_REACT_VERSION="${XINCLI_REACT_VERSION:-$XINCLI_CORE_VERSION}"
+XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.11}"
 
 # ── Parse args ───────────────────────────────────────────────────────────────
 DO_PULL=true
@@ -103,6 +112,10 @@ if [ ! -f "$SCRIPT_DIR/apply-termux-patches.sh" ]; then
 fi
 
 XINCLI_CORE_VERSION="$XINCLI_CORE_VERSION" \
+XINCLI_SOLID_VERSION="$XINCLI_SOLID_VERSION" \
+XINCLI_KEYMAP_VERSION="$XINCLI_KEYMAP_VERSION" \
+XINCLI_REACT_VERSION="$XINCLI_REACT_VERSION" \
+XINCLI_ANDROID_VERSION="$XINCLI_ANDROID_VERSION" \
 OPENCODE_ROOT="$OPENCODE_ROOT" \
   bash "$SCRIPT_DIR/apply-termux-patches.sh" || fail "apply-termux-patches.sh failed"
 
@@ -111,10 +124,52 @@ OPENCODE_ROOT="$OPENCODE_ROOT" \
 # =============================================================================
 header "Step 3: Re-install dependencies"
 
-# Force bun to re-resolve @xincli packages by removing them from node_modules
-info "Removing @xincli packages from node_modules to force re-resolution..."
+# Force bun to re-resolve @xincli packages by removing them from node_modules.
+# We also remove any STALE .bun store dirs for @xincli packages at versions
+# that don't match the current target versions — otherwise nested resolution
+# in the lockfile can pick a stale store dir (this was the exact bug that
+# caused the 0.4.10 android-arm64 module to be bundled instead of 0.4.11).
+info "Removing @xincli / @opentui top-level symlinks..."
 rm -rf "$OPENCODE_ROOT/node_modules/@xincli" 2>/dev/null || true
 rm -rf "$OPENCODE_ROOT/node_modules/@opentui" 2>/dev/null || true
+
+# Sweep stale .bun store dirs for @xincli packages.
+# Target versions come from the patch script's env vars.
+TARGET_CORE="${XINCLI_CORE_VERSION:-0.4.10}"
+TARGET_SOLID="${XINCLI_SOLID_VERSION:-0.4.10}"
+TARGET_KEYMAP="${XINCLI_KEYMAP_VERSION:-0.4.10}"
+TARGET_REACT="${XINCLI_REACT_VERSION:-0.4.10}"
+TARGET_ANDROID="${XINCLI_ANDROID_VERSION:-0.4.11}"
+
+sweep_stale_store() {
+  # $1 = package short name (e.g. "opentui-core")
+  # $2 = target version (e.g. "0.4.10")
+  local pkg="$1"
+  local target="$2"
+  local base="$OPENCODE_ROOT/node_modules/.bun"
+  [ -d "$base" ] || return 0
+  # Match store dirs like "@xincli+opentui-core@0.4.9+abc..." — strip the
+  # optional "+<hash>" suffix before comparing versions.
+  for dir in "$base"/@xincli+${pkg}@*; do
+    [ -d "$dir" ] || continue
+    local basename
+    basename=$(basename "$dir")
+    # Extract version: strip prefix "@xincli+pkg@" and everything after "+"
+    local ver="${basename#@xincli+${pkg}@}"
+    ver="${ver%%+*}"
+    if [ "$ver" != "$target" ]; then
+      info "  purging stale store: $basename (want $target)"
+      rm -rf "$dir"
+    fi
+  done
+}
+
+info "Sweeping stale .bun store dirs (target versions: core=$TARGET_CORE solid=$TARGET_SOLID keymap=$TARGET_KEYMAP react=$TARGET_REACT android=$TARGET_ANDROID)..."
+sweep_stale_store "opentui-core" "$TARGET_CORE"
+sweep_stale_store "opentui-solid" "$TARGET_SOLID"
+sweep_stale_store "opentui-keymap" "$TARGET_KEYMAP"
+sweep_stale_store "opentui-react" "$TARGET_REACT"
+sweep_stale_store "opentui-core-android-arm64" "$TARGET_ANDROID"
 
 bun install 2>&1 | sed 's/^/  /' || fail "bun install failed"
 ok "dependencies installed"
@@ -137,21 +192,26 @@ for pkg in "@opentui/core" "@opentui/solid" "@opentui/keymap" "@xincli/opentui-c
   fi
 done
 
-# Verify @opentui/core is the @xincli fork
+# Verify @opentui/core resolves to the @xincli fork. Search all workspace
+# node_modules (Bun's isolated linker can put it anywhere) instead of only
+# hardcoded paths — otherwise a layout change silently passes verification.
 CORE_PKG_PATH=""
-for p in "$OPENCODE_ROOT/node_modules/@opentui/core/package.json" "$OPENCODE_ROOT/packages/opencode/node_modules/@opentui/core/package.json"; do
+while IFS= read -r p; do
   if [ -f "$p" ]; then
     CORE_PKG_PATH="$p"
     break
   fi
-done
-if [ -n "$CORE_PKG_PATH" ]; then
-  CORE_NAME=$(python3 -c "import json; print(json.load(open('$CORE_PKG_PATH')).get('name','?'))" 2>/dev/null)
-  if [ "$CORE_NAME" = "@xincli/opentui-core" ]; then
-    ok "@opentui/core is the @xincli fork (clean v2 catalog pin working)"
-  else
-    fail "@opentui/core is $CORE_NAME (expected @xincli/opentui-core) — catalog pin not applied"
-  fi
+done < <(find "$OPENCODE_ROOT" -path '*/node_modules/@opentui/core/package.json' -not -path '*/.bun/*' 2>/dev/null)
+
+if [ -z "$CORE_PKG_PATH" ]; then
+  fail "@opentui/core not resolvable in any node_modules — catalog pin missing?"
+fi
+
+CORE_NAME=$(python3 -c "import json; print(json.load(open('$CORE_PKG_PATH')).get('name','?'))" 2>/dev/null)
+if [ "$CORE_NAME" = "@xincli/opentui-core" ]; then
+  ok "@opentui/core → @xincli/opentui-core ($CORE_PKG_PATH)"
+else
+  fail "@opentui/core is $CORE_NAME (expected @xincli/opentui-core) — catalog pin not applied"
 fi
 
 # Verify native .so
