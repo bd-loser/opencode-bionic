@@ -340,8 +340,8 @@ BUNFIG_FILE="$OPENCODE_ROOT/bunfig.toml"
 if [ ! -f "$BUNFIG_FILE" ]; then
   fail "$BUNFIG_FILE not found"
 else
-  if grep -q "@xincli/opentui-core-android-arm64" "$BUNFIG_FILE" 2>/dev/null; then
-    skip "bunfig.toml already has @xincli excludes"
+  if grep -q "@xincli/opentui-keymap" "$BUNFIG_FILE" 2>/dev/null; then
+    skip "bunfig.toml already has all 5 @xincli excludes"
   else
     info "patching: $BUNFIG_FILE"
 
@@ -364,33 +364,49 @@ if not m:
     sys.exit(1)
 
 array_content = m.group(2)
-# Check if @xincli already in the array (idempotency)
-if "@xincli/opentui-core-android-arm64" in array_content:
-    print("    [SKIP] @xincli already in excludes (idempotency check)")
+# Check if ALL @xincli packages already in the array (idempotency)
+if "@xincli/opentui-keymap" in array_content:
+    print("    [SKIP] all 5 @xincli packages already in excludes (idempotency check)")
     sys.exit(0)
 
-# Insert our entries. Preserve the existing format (comma-separated, quoted strings).
-# Add a comma if the array doesn't end with one.
-stripped = array_content.rstrip()
-if stripped and not stripped.endswith(","):
-    stripped += ","
-# Add a space after the comma for readability if there's content
-if stripped and not stripped.endswith(" "):
-    stripped += " "
+# Parse existing entries (split on comma, strip whitespace+quotes)
+existing = [e.strip().strip('"').strip("'") for e in array_content.split(",") if e.strip().strip('"').strip("'")]
 
-new_entries = '"@xincli/opentui-core", "@xincli/opentui-core-android-arm64"'
-new_array_content = stripped + new_entries
+# All 5 @xincli packages to ensure are present
+xincli_pkgs = [
+    "@xincli/opentui-core",
+    "@xincli/opentui-core-android-arm64",
+    "@xincli/opentui-react",
+    "@xincli/opentui-solid",
+    "@xincli/opentui-keymap",
+]
+
+# Add only the ones not already present (dedup)
+added = []
+for pkg in xincli_pkgs:
+    if pkg not in existing:
+        existing.append(pkg)
+        added.append(pkg)
+
+if not added:
+    print("    [SKIP] all 5 @xincli packages already present (dedup check)")
+    sys.exit(0)
+
+# Rebuild the array content with proper formatting
+new_array_content = ", ".join(f'"{e}"' for e in existing)
+
+print(f"    [1b] Added {len(added)} @xincli package(s) to minimumReleaseAgeExcludes:")
+for p in added:
+    print(f"         + {p}")
 
 new_content = content[:m.start(2)] + new_array_content + content[m.end(2):]
 
 with open("$BUNFIG_FILE", "w", encoding="utf-8") as f:
     f.write(new_content)
-
-print("    [1b] Added @xincli/opentui-core + @xincli/opentui-core-android-arm64 to minimumReleaseAgeExcludes")
 PYEOF
 
-    if grep -q "@xincli/opentui-core-android-arm64" "$BUNFIG_FILE" 2>/dev/null; then
-      ok "bunfig.toml patched"
+    if grep -q "@xincli/opentui-keymap" "$BUNFIG_FILE" 2>/dev/null; then
+      ok "bunfig.toml patched (all 5 @xincli packages excluded from minimum-release-age)"
     else
       fail "bunfig.toml patch verification failed"
     fi
