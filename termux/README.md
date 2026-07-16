@@ -10,11 +10,11 @@
 ┌─────────────────────────────────────────────────────────────────┐
 │  npm registry                                                   │
 │                                                                 │
-│  @xincli/opentui-core@0.4.9              ← compiled JS core     │
-│  @xincli/opentui-react@0.4.9             ← React reconciler     │
-│  @xincli/opentui-solid@0.4.9             ← SolidJS binding      │
-│  @xincli/opentui-keymap@0.4.9            ← keymap utilities     │
-│  @xincli/opentui-core-android-arm64@0.4.9 ← native .so (12 MB)  │
+│  @xincli/opentui-core@0.4.10              ← compiled JS core     │
+│  @xincli/opentui-react@0.4.10             ← React reconciler     │
+│  @xincli/opentui-solid@0.4.10             ← SolidJS binding      │
+│  @xincli/opentui-keymap@0.4.10            ← keymap utilities     │
+│  @xincli/opentui-core-android-arm64@0.4.10 ← native .so (12 MB)  │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
                               │ npm: aliases in catalog
@@ -24,11 +24,11 @@
 │                                                                 │
 │  package.json:                                                  │
 │    workspaces.catalog:                                          │
-│      "@opentui/core":  "npm:@xincli/opentui-core@0.4.9"         │
-│      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9"        │
-│      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.9"       │
+│      "@opentui/core":  "npm:@xincli/opentui-core@0.4.10"         │
+│      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10"        │
+│      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.10"       │
 │    optionalDependencies:                                        │
-│      "@xincli/opentui-core-android-arm64": "0.4.9"              │
+│      "@xincli/opentui-core-android-arm64": "0.4.10"              │
 │                                                                 │
 │  No overrides needed — @xincli packages directly depend on      │
 │  each other via npm: aliases in their own dependencies.         │
@@ -98,7 +98,7 @@ git pull
 # Rebuild with the new version
 XINCLI_CORE_VERSION=0.4.10 bash termux/rebuild-opencode.sh
 
-# Or use the default (0.4.9) — bump the default in the script first
+# Or use the default (0.4.10) — bump the default in the script first
 bash termux/rebuild-opencode.sh
 ```
 
@@ -149,31 +149,31 @@ bash termux/clean-reinstall.sh
 
 ## How it works
 
-### The 0.4.9 compiled binary fix
+### The 0.4.10 compiled binary fix
 
 Previous versions crashed with `opentui is not supported on the current platform: android-arm64` when running the **compiled binary** (but `bun run` worked fine).
 
 **Root cause:** When opentui is bundled into a Bun-compiled binary, the `.so` lives inside bunfs (Bun's virtual embedded filesystem). `dlopen()` is a kernel syscall and cannot read from bunfs — it fails with ENOENT.
 
-**Fix (in `@xincli/opentui-core@0.4.9`):** When `isBunfsPath(targetLibPath)` is true, extract the `.so` to `$TMPDIR/opentui-native/libopentui-<hash>.so` using `readFileSync()` (which Bun intercepts to read from bunfs), then point `targetLibPath` at the extracted file. See `packages/core/src/zig.ts` in the opentui fork.
+**Fix (in `@xincli/opentui-core@0.4.10`):** When `isBunfsPath(targetLibPath)` is true, extract the `.so` to `$TMPDIR/opentui-native/libopentui-<hash>.so` using `readFileSync()` (which Bun intercepts to read from bunfs), then point `targetLibPath` at the extracted file. See `packages/core/src/zig.ts` in the opentui fork.
 
 ### The clean v2 catalog pin approach
 
 Previous versions used Bun's `overrides` field to force `@opentui/core` → `@xincli/opentui-core` across the entire workspace. This was necessary because upstream `@opentui/solid@0.4.3` brought its own nested `@opentui/core@0.4.3` (which has no Android branch).
 
-**Since 0.4.9:** `@xincli/opentui-solid` and `@xincli/opentui-keymap` are published to npm with `@opentui/core` aliased to `npm:@xincli/opentui-core` in their own `dependencies` field. So we just pin the catalog entries:
+**Since 0.4.10:** `@xincli/opentui-solid` and `@xincli/opentui-keymap` are published to npm with `@opentui/core` aliased to `npm:@xincli/opentui-core` in their own `dependencies` field. So we just pin the catalog entries:
 
 ```json
 {
   "workspaces": {
     "catalog": {
-      "@opentui/core":  "npm:@xincli/opentui-core@0.4.9",
-      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9",
-      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.9"
+      "@opentui/core":  "npm:@xincli/opentui-core@0.4.10",
+      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10",
+      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.10"
     }
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.9"
+    "@xincli/opentui-core-android-arm64": "0.4.10"
   }
 }
 ```
@@ -195,11 +195,11 @@ These patches are Termux-specific (not opentui-related) and remain necessary:
 
 | Error | Cause | Fix |
 |---|---|---|
-| `opentui is not supported on the current platform: android-arm64` | Compiled binary can't load `.so` from bunfs | Update to `@xincli/opentui-core@0.4.9+` (has the bunfs extraction fix) |
+| `opentui is not supported on the current platform: android-arm64` | Compiled binary can't load `.so` from bunfs | Update to `@xincli/opentui-core@0.4.10+` (has the bunfs extraction fix) |
 | `SIGABRT` / `Pointer tag for 0x... was truncated` | MTE heap tagging + FFI | Ensure `MEMTAG_OPTIONS=off` and `LD_PRELOAD` contains `libbun-android-fix.so` |
 | `Cannot find module '@ff-labs/fff-bun'` | Package has `os:` restriction, skipped on Android | Patch 1f handles this (lazy require + null guard) — run `apply-termux-patches.sh` |
 | `@opentui/core is @opentui/core (expected @xincli/opentui-core)` | Catalog pin not applied | Run `apply-termux-patches.sh`, then `bun install` again |
-| `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.9 --optional` |
+| `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.10 --optional` |
 
 ## Related repositories
 

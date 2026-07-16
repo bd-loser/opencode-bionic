@@ -44,7 +44,7 @@ info()  { echo -e "  ${MUTED}       $*${NC}"; }
 header(){ echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.9}"
+XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
 
 # ── Parse args ───────────────────────────────────────────────────────────────
 DO_PULL=true

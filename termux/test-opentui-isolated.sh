@@ -24,7 +24,7 @@
 #   3. `createCliRenderer()` works (FFI loads libopentui.so OK, MTE doesn't
 #      crash, renderer starts)
 #   4. `@opentui/solid`'s `render()` works (Solid reconciler + opentui core
-#      API compat — if 0.4.9 solid breaks with 0.4.9 core, this fails)
+#      API compat — if 0.4.10 solid breaks with 0.4.10 core, this fails)
 #   5. A `<box>` renders with a `<text>` child (basic renderable tree works)
 #   6. Renderer destroys cleanly (no exit race condition)
 #
@@ -100,7 +100,7 @@ mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 
 # Minimal package.json — only 3 deps
-# Clean v2 approach: all @xincli packages published at 0.4.9, so we use
+# Clean v2 approach: all @xincli packages published at 0.4.10, so we use
 # npm: aliases directly. No overrides needed — @xincli/opentui-solid
 # directly depends on @xincli/opentui-core in its own dependencies.
 cat > package.json <<'EOF'
@@ -110,12 +110,12 @@ cat > package.json <<'EOF'
   "type": "module",
   "private": true,
   "dependencies": {
-    "@opentui/core": "npm:@xincli/opentui-core@0.4.9",
-    "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9",
+    "@opentui/core": "npm:@xincli/opentui-core@0.4.10",
+    "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10",
     "solid-js": "1.9.10"
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.9"
+    "@xincli/opentui-core-android-arm64": "0.4.10"
   }
 }
 EOF
@@ -167,7 +167,7 @@ if [ -f "$SO_PATH" ]; then
 else
   fail "libopentui.so not found at $SO_PATH"
   echo "The optionalDependency didn't install. Try:" >&2
-  echo "  bun add @xincli/opentui-core-android-arm64@0.4.9" >&2
+  echo "  bun add @xincli/opentui-core-android-arm64@0.4.10" >&2
   exit 1
 fi
 
@@ -180,7 +180,7 @@ else
 fi
 
 # CRITICAL: verify @opentui/solid does NOT have a nested upstream @opentui/core
-# Since 0.4.9, @xincli/opentui-solid directly depends on @xincli/opentui-core
+# Since 0.4.10, @xincli/opentui-solid directly depends on @xincli/opentui-core
 # via npm: alias — so there's no nested upstream copy to worry about.
 # But we still check for belt-and-suspenders safety.
 NESTED_CORE="node_modules/@opentui/solid/node_modules/@opentui/core"
@@ -190,7 +190,7 @@ if [ -d "$NESTED_CORE" ]; then
     ok "nested @opentui/core inside @opentui/solid is @xincli fork (direct dep — no override needed)"
   else
     fail "nested @opentui/core inside @opentui/solid is upstream ($NESTED_NAME)"
-    echo "  This should not happen with @xincli/opentui-solid@0.4.9+." >&2
+    echo "  This should not happen with @xincli/opentui-solid@0.4.10+." >&2
     echo "  The package should directly depend on @xincli/opentui-core." >&2
     exit 1
   fi
@@ -250,8 +250,8 @@ if "$BUN_BIN" run app.tsx 2>&1; then
   ok "TEST PASSED — opentui + solid work on Termux"
   echo ""
   echo "This means:"
-  echo "  ✅ @xincli/opentui-core@0.4.9 FFI works (libopentui.so loads, no MTE crash)"
-  echo "  ✅ @xincli/opentui-solid@0.4.9 is API-compatible with @xincli/opentui-core@0.4.9"
+  echo "  ✅ @xincli/opentui-core@0.4.10 FFI works (libopentui.so loads, no MTE crash)"
+  echo "  ✅ @xincli/opentui-solid@0.4.10 is API-compatible with @xincli/opentui-core@0.4.10"
   echo "  ✅ createCliRenderer() + render() + <box>/<text> all work"
   echo "  ✅ Renderer destroys cleanly (no exit race)"
   echo ""
@@ -279,7 +279,7 @@ else
   echo "    → check: echo \$MEMTAG_OPTIONS (must be 'off')"
   echo ""
   echo "  'Cannot find export X in @xincli/opentui-core'"
-  echo "    → @xincli/opentui-solid@0.4.9 API break with @xincli/opentui-core@0.4.9"
+  echo "    → @xincli/opentui-solid@0.4.10 API break with @xincli/opentui-core@0.4.10"
   echo "    → need to fork @opentui/solid, publish as @xincli/opentui-solid"
   echo ""
   echo "  'TypeError: ... is not a function'"
