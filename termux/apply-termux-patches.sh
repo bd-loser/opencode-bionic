@@ -83,8 +83,15 @@
 set -euo pipefail
 
 # --- Config ------------------------------------------------------------------
-XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.8}"
-XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.8}"
+# Version 0.4.9 fixes the compiled binary crash (bunfs .so extraction).
+# It also publishes @xincli/opentui-solid and @xincli/opentui-keymap,
+# which means we no longer need the `overrides` hack — we can use
+# clean catalog pins with npm: aliases instead.
+XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.9}"
+XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.9}"
+XINCLI_REACT_VERSION="${XINCLI_REACT_VERSION:-0.4.9}"
+XINCLI_SOLID_VERSION="${XINCLI_SOLID_VERSION:-0.4.9}"
+XINCLI_KEYMAP_VERSION="${XINCLI_KEYMAP_VERSION:-0.4.9}"
 PATCH_MARKER="opencode-bionic-patched"
 
 # Colors
@@ -165,45 +172,51 @@ except (KeyError, TypeError):
 #   android→linux, so process.platform==="linux" but libc is Bionic) it
 #   throws "opentui is not supported on the current platform: linux-arm64".
 #
-# Fix:
-#   Use Bun's `overrides` field to alias @opentui/core → @xincli/opentui-core.
-#   The @xincli fork (0.4.8) already has Termux detection baked into its
-#   compiled resolveNativePackage() — it checks process.platform==="android"
-#   OR (linux + $PREFIX contains "com.termux") and loads
-#   @xincli/opentui-core-android-arm64. No source patching needed.
+# Fix (v2 — clean catalog pins, no overrides hack):
+#   Since 0.4.9, we publish @xincli/opentui-solid and @xincli/opentui-keymap
+#   to npm. These packages directly depend on @xincli/opentui-core (via
+#   npm: alias in their dependencies field). So we no longer need the
+#   `overrides` hack to force the cascade — we just pin the catalog entries
+#   to npm:@xincli/... aliases directly.
 #
-#   The override forces ALL @opentui/core resolutions in the workspace to
-#   use the @xincli fork, including peer-dep resolutions from:
-#     - @opentui/solid@0.4.3 (used by opencode tui)
-#     - @opentui/keymap@0.4.3 (used by opencode tui)
-#     - opentui-spinner (used by opencode tui)
+#   This is cleaner because:
+#     1. catalog: pins are Bun's intended mechanism (not overrides)
+#     2. No "override cascade" needed — @xincli/opentui-solid already
+#        points to @xincli/opentui-core in its own dependencies
+#     3. The overrides field can be removed entirely
 #
-#   We also add @xincli/opentui-core-android-arm64@0.4.8 as an
-#   optionalDependency so `bun install` fetches the .so on aarch64.
+#   We pin:
+#     catalog["@opentui/core"]  = "npm:@xincli/opentui-core@0.4.9"
+#     catalog["@opentui/solid"] = "npm:@xincli/opentui-solid@0.4.9"
+#     catalog["@opentui/keymap"] = "npm:@xincli/opentui-keymap@0.4.9"
+#
+#   And add the .so as optionalDependency:
+#     optionalDependencies["@xincli/opentui-core-android-arm64"] = "0.4.9"
+#
+#   We also remove the stale @opentui/* entries from `overrides` (if they
+#   exist from a previous run with the old patch), since we're using catalog
+#   pins now.
 #
 # Compatibility note:
-#   @xincli/opentui-core@0.4.8 ships compiled JS (main: index.js) from
-#   opentui 0.4.8 source. opencode pins @opentui/core@0.4.3. The TS bindings
-#   API between 0.4.3 and 0.4.8 should be compatible (same 0.4.x minor).
-#   If a breaking change was introduced, @opentui/solid@0.4.3 (which expects
-#   0.4.3 API) might fail at runtime. In that case, downgrade to
-#   @xincli/opentui-core@0.4.7 or rebuild @xincli/opentui-core from 0.4.3
-#   source.
+#   @xincli/opentui-core@0.4.9 ships compiled JS from opentui 0.4.9 source.
+#   The TS bindings API between 0.4.3 and 0.4.9 should be compatible (same
+#   0.4.x minor). The 0.4.9 release also fixes the compiled binary crash
+#   (bunfs .so extraction) — see packages/core/src/zig.ts in the opentui fork.
 # =============================================================================
 
 echo ""
-echo "=== Patch 1: Root package.json — npm alias override ==="
+echo "=== Patch 1: Root package.json — clean catalog pins (v2, no overrides) ==="
 
 ROOT_PKG_JSON="$OPENCODE_ROOT/package.json"
 
-# Idempotency: check if override already present with correct version
-CURRENT_OVERRIDE=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}" 2>/dev/null || echo "MISSING")
+# Idempotency: check if catalog already has the @xincli alias
+CURRENT_CATALOG=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["workspaces"]["catalog"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}" 2>/dev/null || echo "MISSING")
 
-if [ "$CURRENT_OVERRIDE" = "OK" ]; then
-  skip "overrides[@opentui/core] already = npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
+if [ "$CURRENT_CATALOG" = "OK" ]; then
+  skip "catalog[@opentui/core] already = npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
 else
   info "patching: $ROOT_PKG_JSON"
-  info "  current value: ${CURRENT_OVERRIDE:-<none>}"
+  info "  current catalog value: ${CURRENT_CATALOG:-<none>}"
 
   python3 <<PYEOF
 import json, sys
@@ -211,32 +224,52 @@ import json, sys
 with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
     pkg = json.load(f)
 
-# Add the npm alias override
-overrides = pkg.setdefault("overrides", {})
-overrides["@opentui/core"] = "npm:@xincli/opentui-core@$XINCLI_CORE_VERSION"
-
-# Also override the catalog entry so workspace packages that say
-# "@opentui/core": "catalog:" resolve to 0.4.8 (then the override maps
-# that to @xincli). Without this, bun install would still try to fetch
-# @opentui/core@0.4.3 first, then override it — wasteful but works.
 catalog = pkg.get("workspaces", {}).get("catalog", {})
-if "@opentui/core" in catalog:
-    old_ver = catalog["@opentui/core"]
-    catalog["@opentui/core"] = "$XINCLI_CORE_VERSION"
-    print(f"    [1a] catalog['@opentui/core']: {old_ver} -> $XINCLI_CORE_VERSION")
 
-# Add @xincli/opentui-core-android-arm64 as optionalDependency
+# Pin all @opentui/* catalog entries to npm:@xincli/... aliases.
+# This is the clean approach — no overrides needed.
+pins = {
+    "@opentui/core":  f"npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}",
+    "@opentui/solid": f"npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}",
+    "@opentui/keymap": f"npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}",
+}
+
+for name, alias in pins.items():
+    if name in catalog:
+        old = catalog[name]
+        catalog[name] = alias
+        print(f"    [1a] catalog['{name}']: {old} -> {alias}")
+    else:
+        catalog[name] = alias
+        print(f"    [1a] catalog['{name}']: <added> -> {alias}")
+
+# Remove stale @opentui/* entries from overrides (from old patch versions).
+# We don't need overrides anymore — the catalog pins handle everything.
+overrides = pkg.get("overrides", {})
+removed_overrides = []
+for key in list(overrides.keys()):
+    if key in ("@opentui/core", "@opentui/solid", "@opentui/keymap"):
+        removed_overrides.append(f"{key}={overrides[key]}")
+        del overrides[key]
+if removed_overrides:
+    print(f"    [1b] Removed stale overrides: {removed_overrides}")
+    if not overrides:
+        del pkg["overrides"]
+        print(f"    [1b] overrides field is now empty — removed entirely")
+
+# Add @xincli/opentui-core-android-arm64 as optionalDependency so the .so
+# gets fetched on aarch64-Termux.
 opts = pkg.setdefault("optionalDependencies", {})
 old = opts.get("@xincli/opentui-core-android-arm64", "<none>")
-opts["@xincli/opentui-core-android-arm64"] = "$XINCLI_ANDROID_VERSION"
-print(f"    [1b] optionalDependencies['@xincli/opentui-core-android-arm64']: {old} -> $XINCLI_ANDROID_VERSION")
+opts["@xincli/opentui-core-android-arm64"] = "${XINCLI_ANDROID_VERSION}"
+print(f"    [1c] optionalDependencies['@xincli/opentui-core-android-arm64']: {old} -> ${XINCLI_ANDROID_VERSION}")
 
-# Mark the package.json as patched (in a way that survives JSON re-serialization)
-# We use a comment-like field in a custom key.
+# Mark the package.json as patched
 pkg["_opencodeBionic"] = {
     "patched": True,
-    "version": "$XINCLI_CORE_VERSION",
-    "marker": "$PATCH_MARKER",
+    "version": "${XINCLI_CORE_VERSION}",
+    "marker": "${PATCH_MARKER}",
+    "approach": "catalog-pins-v2",
     "note": "Patched by apply-termux-patches.sh for Termux/Android. Safe to remove this key."
 }
 
@@ -244,18 +277,21 @@ with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
     json.dump(pkg, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
-print(f"    [1c] overrides['@opentui/core'] = npm:@xincli/opentui-core@$XINCLI_CORE_VERSION")
-print(f"    [1d] marker _opencodeBionic added")
+print(f"    [1d] marker _opencodeBionic added (approach: catalog-pins-v2)")
 PYEOF
 
   # Verify
-  V1=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}")
-  V2=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["optionalDependencies"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
-  V3=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["_opencodeBionic"]["marker"]' "${PATCH_MARKER}")
+  V1=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["workspaces"]["catalog"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}")
+  V2=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["workspaces"]["catalog"]["@opentui/solid"]' "npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}")
+  V3=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["workspaces"]["catalog"]["@opentui/keymap"]' "npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}")
+  V4=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["optionalDependencies"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
+  V5=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["_opencodeBionic"]["marker"]' "${PATCH_MARKER}")
 
-  [ "$V1" = "OK" ] && ok "overrides[@opentui/core] verified" || fail "overrides[@opentui/core] NOT verified (got: $V1)"
-  [ "$V2" = "OK" ] && ok "optionalDependencies[@xincli/opentui-core-android-arm64] verified" || fail "optionalDependency NOT verified (got: $V2)"
-  [ "$V3" = "OK" ] && ok "marker _opencodeBionic verified" || fail "marker NOT verified (got: $V3)"
+  [ "$V1" = "OK" ] && ok "catalog[@opentui/core] → npm:@xincli/opentui-core verified" || fail "catalog[@opentui/core] NOT verified (got: $V1)"
+  [ "$V2" = "OK" ] && ok "catalog[@opentui/solid] → npm:@xincli/opentui-solid verified" || fail "catalog[@opentui/solid] NOT verified (got: $V2)"
+  [ "$V3" = "OK" ] && ok "catalog[@opentui/keymap] → npm:@xincli/opentui-keymap verified" || fail "catalog[@opentui/keymap] NOT verified (got: $V3)"
+  [ "$V4" = "OK" ] && ok "optionalDependencies[@xincli/opentui-core-android-arm64] verified" || fail "optionalDependency NOT verified (got: $V4)"
+  [ "$V5" = "OK" ] && ok "marker _opencodeBionic verified" || fail "marker NOT verified (got: $V5)"
 fi
 
 # =============================================================================

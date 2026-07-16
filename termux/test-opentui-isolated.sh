@@ -24,7 +24,7 @@
 #   3. `createCliRenderer()` works (FFI loads libopentui.so OK, MTE doesn't
 #      crash, renderer starts)
 #   4. `@opentui/solid`'s `render()` works (Solid reconciler + opentui core
-#      API compat — if 0.4.3 solid breaks with 0.4.8 core, this fails)
+#      API compat — if 0.4.9 solid breaks with 0.4.9 core, this fails)
 #   5. A `<box>` renders with a `<text>` child (basic renderable tree works)
 #   6. Renderer destroys cleanly (no exit race condition)
 #
@@ -100,12 +100,10 @@ mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 
 # Minimal package.json — only 3 deps
-# CRITICAL: the `overrides` field is what makes this work. Without it,
-# @opentui/solid@0.4.3 brings its OWN nested copy of upstream @opentui/core@0.4.3
-# (which has no Termux detection) and crashes with
-# "opentui is not supported on the current platform: android-arm64".
-# The `overrides` field forces ALL @opentui/core resolutions (including
-# @opentui/solid's nested dep) to use @xincli/opentui-core@0.4.8.
+# Since 0.4.9, we publish @xincli/opentui-solid which directly depends on
+# @xincli/opentui-core. So we no longer need the `overrides` hack —
+# we just install @xincli/opentui-solid directly (via npm: alias on
+# the @opentui/solid specifier).
 cat > package.json <<'EOF'
 {
   "name": "opentui-test",
@@ -113,19 +111,16 @@ cat > package.json <<'EOF'
   "type": "module",
   "private": true,
   "dependencies": {
-    "@opentui/core": "npm:@xincli/opentui-core@0.4.8",
-    "@opentui/solid": "0.4.3",
+    "@opentui/core": "npm:@xincli/opentui-core@0.4.9",
+    "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9",
     "solid-js": "1.9.10"
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.8"
-  },
-  "overrides": {
-    "@opentui/core": "npm:@xincli/opentui-core@0.4.8"
+    "@xincli/opentui-core-android-arm64": "0.4.9"
   }
 }
 EOF
-ok "package.json created (with overrides to force global @xincli resolution)"
+ok "package.json created (clean catalog pins, no overrides needed — @xincli/opentui-solid@0.4.9 directly depends on @xincli/opentui-core)"
 
 # --- bun install -------------------------------------------------------------
 echo ""
@@ -173,7 +168,7 @@ if [ -f "$SO_PATH" ]; then
 else
   fail "libopentui.so not found at $SO_PATH"
   echo "The optionalDependency didn't install. Try:" >&2
-  echo "  bun add @xincli/opentui-core-android-arm64@0.4.8" >&2
+  echo "  bun add @xincli/opentui-core-android-arm64@0.4.9" >&2
   exit 1
 fi
 
@@ -186,18 +181,18 @@ else
 fi
 
 # CRITICAL: verify @opentui/solid does NOT have a nested upstream @opentui/core
-# If it does, the `overrides` field didn't work and the test will fail with
-# "opentui is not supported on the current platform: android-arm64".
+# Since 0.4.9, @xincli/opentui-solid directly depends on @xincli/opentui-core
+# via npm: alias — so there's no nested upstream copy to worry about.
+# But we still check for belt-and-suspenders safety.
 NESTED_CORE="node_modules/@opentui/solid/node_modules/@opentui/core"
 if [ -d "$NESTED_CORE" ]; then
   NESTED_NAME=$("$BUN_BIN" -e "console.log(require('./$NESTED_CORE/package.json').name)" 2>/dev/null || echo "?")
   if [ "$NESTED_NAME" = "@xincli/opentui-core" ]; then
-    ok "nested @opentui/core inside @opentui/solid is @xincli fork (override worked)"
+    ok "nested @opentui/core inside @opentui/solid is @xincli fork (direct dep — no override needed)"
   else
     fail "nested @opentui/core inside @opentui/solid is upstream ($NESTED_NAME)"
-    echo "  The overrides field didn't cascade to @opentui/solid's nested dep." >&2
-    echo "  This will cause 'opentui is not supported on android-arm64' at runtime." >&2
-    echo "  Bun version may not support overrides with npm: aliases." >&2
+    echo "  This should not happen with @xincli/opentui-solid@0.4.9+." >&2
+    echo "  The package should directly depend on @xincli/opentui-core." >&2
     exit 1
   fi
 else
@@ -256,8 +251,8 @@ if "$BUN_BIN" run app.tsx 2>&1; then
   ok "TEST PASSED — opentui + solid work on Termux"
   echo ""
   echo "This means:"
-  echo "  ✅ @xincli/opentui-core@0.4.8 FFI works (libopentui.so loads, no MTE crash)"
-  echo "  ✅ @opentui/solid@0.4.3 is API-compatible with @xincli/opentui-core@0.4.8"
+  echo "  ✅ @xincli/opentui-core@0.4.9 FFI works (libopentui.so loads, no MTE crash)"
+  echo "  ✅ @xincli/opentui-solid@0.4.9 is API-compatible with @xincli/opentui-core@0.4.9"
   echo "  ✅ createCliRenderer() + render() + <box>/<text> all work"
   echo "  ✅ Renderer destroys cleanly (no exit race)"
   echo ""
@@ -285,7 +280,7 @@ else
   echo "    → check: echo \$MEMTAG_OPTIONS (must be 'off')"
   echo ""
   echo "  'Cannot find export X in @xincli/opentui-core'"
-  echo "    → @opentui/solid@0.4.3 API break with @xincli/opentui-core@0.4.8"
+  echo "    → @xincli/opentui-solid@0.4.9 API break with @xincli/opentui-core@0.4.9"
   echo "    → need to fork @opentui/solid, publish as @xincli/opentui-solid"
   echo ""
   echo "  'TypeError: ... is not a function'"

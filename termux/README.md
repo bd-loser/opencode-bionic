@@ -41,14 +41,14 @@ The changes are in `package.json` and `bunfig.toml` (no source files modified):
 ```jsonc
 {
   "overrides": {
-    "@opentui/core": "npm:@xincli/opentui-core@0.4.8"
+    "@opentui/core": "npm:@xincli/opentui-core@0.4.9"
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.8"
+    "@xincli/opentui-core-android-arm64": "0.4.9"
   },
   "workspaces": {
     "catalog": {
-      "@opentui/core": "0.4.8"  // was 0.4.3
+      "@opentui/core": "0.4.9"  // was 0.4.3
     }
   },
   "trustedDependencies": [
@@ -86,7 +86,7 @@ minimumReleaseAgeExcludes = [
 ]
 ```
 
-The `@xincli/opentui-core@0.4.8` package (published by
+The `@xincli/opentui-core@0.4.9` package (published by
 [bd-loser/opentui](https://github.com/bd-loser/opentui)) already has Termux
 detection baked into its compiled `resolveNativePackage()` — it checks
 `process.platform === "android"` OR `(linux && $PREFIX contains "com.termux")`
@@ -119,7 +119,7 @@ bash termux/test-opentui-isolated.sh
 ```
 
 **If this test passes**: opentui FFI works, @opentui/solid@0.4.3 is API-compatible
-with @xincli/opentui-core@0.4.8. Any opencode failure is in opencode itself
+with @xincli/opentui-core@0.4.9. Any opencode failure is in opencode itself
 (bun-pty, sqlite, opencode's own code).
 
 **If this test fails**: the error tells you exactly what's broken:
@@ -155,7 +155,7 @@ Either way, `createCliRenderer()` throws on startup. opencode's TUI never render
 
 ### The fix
 
-The user's `@xincli/opentui-core@0.4.8` npm package already fixes this — its
+The user's `@xincli/opentui-core@0.4.9` npm package already fixes this — its
 compiled `resolveNativePackage()` has the Termux branch:
 ```js
 const isTermux = typeof process.env.PREFIX === "string" && process.env.PREFIX.includes("com.termux");
@@ -298,7 +298,7 @@ exec'ing the raw bun binary at `$PREFIX/lib/bun-termux/bun`.
 The override didn't apply. Verify:
 ```bash
 grep -A 1 '"overrides"' package.json
-# should show: "@opentui/core": "npm:@xincli/opentui-core@0.4.8"
+# should show: "@opentui/core": "npm:@xincli/opentui-core@0.4.9"
 
 ls node_modules/@opentui/core/package.json
 # should be the @xincli fork — check with:
@@ -310,7 +310,7 @@ cat node_modules/@opentui/core/package.json | python3 -c "import sys,json; print
 
 The optionalDependency didn't install. Run:
 ```bash
-bun add @xincli/opentui-core-android-arm64@0.4.8 --optional
+bun add @xincli/opentui-core-android-arm64@0.4.9 --optional
 ls node_modules/@xincli/opentui-core-android-arm64/libopentui.so
 file node_modules/@xincli/opentui-core-android-arm64/libopentui.so
 # should print: ELF 64-bit LSB shared object, ARM aarch64
@@ -318,15 +318,15 @@ file node_modules/@xincli/opentui-core-android-arm64/libopentui.so
 
 ### opencode crashes with "undefined symbol: opentui_*"
 
-ABI mismatch between `@xincli/opentui-core@0.4.8` (TS bindings) and
-`@xincli/opentui-core-android-arm64@0.4.8` (the `.so`). Both should be 0.4.8.
+ABI mismatch between `@xincli/opentui-core@0.4.9` (TS bindings) and
+`@xincli/opentui-core-android-arm64@0.4.9` (the `.so`). Both should be 0.4.9.
 If you rebuilt the `.so` from a different opentui version, bump both versions
 together and re-publish.
 
 ### opencode starts but `@opentui/solid` import fails
 
 `@opentui/solid@0.4.3` expects `@opentui/core@0.4.3` API. With our override
-it gets `@xincli/opentui-core@0.4.8`. If 0.4.8 has breaking API changes,
+it gets `@xincli/opentui-core@0.4.9`. If 0.4.9 has breaking API changes,
 you'll see `Cannot find export X in @xincli/opentui-core`.
 
 **Fix**: downgrade the override:
@@ -363,11 +363,11 @@ When you hit an issue on the phone:
 | Component | Version | Termux Status |
 |---|---|---|
 | bun | 1.3.14 (bd-loser/bun-termux) | ✅ patched |
-| @opentui/core | overridden → @xincli/opentui-core@0.4.8 | ✅ Termux detection baked in |
-| @xincli/opentui-core-android-arm64 | 0.4.8 | ✅ published |
+| @opentui/core | overridden → @xincli/opentui-core@0.4.9 | ✅ Termux detection baked in |
+| @xincli/opentui-core-android-arm64 | 0.4.9 | ✅ published |
 | @opentui/solid | 0.4.3 (catalog pin, unchanged) | ⚠️ gets @xincli via override — API compat unverified |
 | @opentui/keymap | 0.4.3 (catalog pin, unchanged) | ⚠️ same |
-| bun-pty | 0.4.8 | ⚠️ unverified on Android |
+| bun-pty | 0.4.9 | ⚠️ unverified on Android |
 | @lydell/node-pty | 1.2.0-beta.12 | N/A (not used under Bun) |
 | @parcel/watcher | 2.5.1 | ⚠️ degrades (no Bionic binary) |
 | @ff-labs/fff-bun | 0.9.3 (opencode's existing patch) | ⚠️ degrades to ripgrep |
