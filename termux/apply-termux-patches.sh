@@ -817,6 +817,72 @@ else
 fi
 
 # =============================================================================
+# PATCH 6: Detect stale bun.lock (CRITICAL — causes "Cannot find module")
+# =============================================================================
+#
+# Root cause:
+#   opencode's repo ships a committed bun.lock (869KB). This lockfile was
+#   generated with the ORIGINAL package.json (before our patches). It contains
+#   cached resolutions for every package — including @ff-labs/fff-bun, which
+#   was skipped due to the patchedDependencies version mismatch (0.9.3 patch
+#   vs 0.9.4 actual).
+#
+#   When we remove the patchedDependencies entry (Patch 1e), the lockfile
+#   does NOT automatically update. `bun install` sees the lockfile, checks
+#   if it satisfies package.json, and if "close enough", reuses the cached
+#   resolution — which still skips @ff-labs/fff-bun.
+#
+#   Result: `bun install` reports "4050 packages installed" (success!) but
+#   @ff-labs/fff-bun is NOT in node_modules. At runtime:
+#     error: Cannot find module '@ff-labs/fff-bun' from '.../fff.bun.ts'
+#
+# Fix:
+#   If we detect that bun.lock exists AND any of our patches changed
+#   package.json this run, warn the user to delete bun.lock before
+#   `bun install`. We can't auto-delete it because:
+#   (a) it's a committed file (git would show it as deleted)
+#   (b) the user might want to inspect it first
+#
+#   Instead, we print a loud warning with the exact command to run.
+# =============================================================================
+
+echo ""
+echo "=== Patch 6: Detect stale bun.lock ==="
+
+BUNLOCK_FILE="$OPENCODE_ROOT/bun.lock"
+
+# Check if any of our patches modified package.json this run
+# (we track this via the _opencodeBionic marker — if it was just added/updated,
+# the lockfile is definitely stale)
+PATCHES_APPLIED_THIS_RUN=0
+if [ -n "${CURRENT_OVERRIDE:-}" ] && [ "$CURRENT_OVERRIDE" != "OK" ]; then
+  PATCHES_APPLIED_THIS_RUN=1
+fi
+# Patch 1b (bunfig) doesn't affect lockfile
+# Patch 1c (trustedDependencies) doesn't affect lockfile resolution
+# Patch 1d (scripts) doesn't affect lockfile
+if [ -n "${HAS_FFF_PATCH:-}" ] && [ "$HAS_FFF_PATCH" = "YES" ]; then
+  PATCHES_APPLIED_THIS_RUN=1
+fi
+
+if [ -f "$BUNLOCK_FILE" ]; then
+  # Always warn if bun.lock exists — it's safer to regenerate it
+  warn "bun.lock exists at $BUNLOCK_FILE"
+  info "This lockfile was generated with the ORIGINAL (unpatched) package.json."
+  info "It contains stale resolutions that will cause 'Cannot find module' errors."
+  info ""
+  info "CRITICAL: Before running 'bun install', delete the stale lockfile:"
+  info "  rm -rf node_modules bun.lock"
+  info "  bun install   # regenerates bun.lock with correct resolutions"
+  info ""
+  info "Without this, bun install will reuse the stale lockfile and skip packages"
+  info "like @ff-labs/fff-bun (even though patches fixed the version mismatch)."
+  WARN_COUNT=$((WARN_COUNT + 1))
+else
+  ok "no bun.lock found (clean state — bun install will generate a fresh one)"
+fi
+
+# =============================================================================
 # SUMMARY
 # =============================================================================
 
@@ -837,13 +903,14 @@ fi
 
 echo ""
 echo "Next steps:"
-echo "  1. Run 'bun install' to pick up the new override + optionalDependency:"
+echo "  1. CRITICAL — delete stale lockfile + node_modules:"
+echo "       rm -rf node_modules bun.lock"
+echo "  2. Run 'bun install' (regenerates lockfile with correct resolutions):"
 echo "       bun install"
-echo "  2. Verify @xincli packages are in node_modules:"
-echo "       ls node_modules/@xincli/"
-echo "       ls node_modules/@opentui/core/  # should be a symlink/replacement to @xincli"
-echo "  3. Run opencode:"
+echo "  3. Verify @ff-labs/fff-bun is installed:"
+echo "       ls node_modules/@ff-labs/fff-bun/package.json"
+echo "  4. Run opencode:"
 echo "       bash $(dirname "$0")/run-opencode-termux.sh"
 echo ""
-echo "Or run directly:"
-echo "  bun run --cwd packages/opencode --conditions=browser src/index.ts"
+echo "If you skip step 1, bun install will reuse the stale lockfile and"
+echo "@ff-labs/fff-bun will be silently skipped (Cannot find module error)."

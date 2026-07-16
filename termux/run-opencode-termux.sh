@@ -224,6 +224,63 @@ else
   echo "  (warning only — opencode will crash at startup if .so is missing)" >&2
 fi
 
+# Check 4: CRITICAL — verify @ff-labs/fff-bun is actually in node_modules
+# This is the package that fails with "Cannot find module" if the lockfile
+# is stale. The stale bun.lock (from upstream opencode) has a cached
+# resolution that skips @ff-labs/fff-bun when the patchedDependencies
+# version mismatches. Even after we remove the patchedDependencies entry
+# (Patch 1e), the lockfile keeps the old resolution. The fix is to delete
+# both node_modules AND bun.lock before re-running bun install.
+FFF_PATH="$OPENCODE_ROOT/node_modules/@ff-labs/fff-bun/package.json"
+if [ ! -f "$FFF_PATH" ]; then
+  echo "" >&2
+  echo "ERROR: @ff-labs/fff-bun is NOT in node_modules." >&2
+  echo "  This is a stale lockfile issue. The bun.lock has a cached resolution" >&2
+  echo "  that skips this package (from the old patchedDependencies mismatch)." >&2
+  echo "" >&2
+  echo "  FIX — run these exact commands:" >&2
+  echo "    cd $OPENCODE_ROOT" >&2
+  echo "    rm -rf node_modules bun.lock" >&2
+  echo "    bash termux/apply-termux-patches.sh" >&2
+  echo "    bun install" >&2
+  echo "    bash termux/run-opencode-termux.sh" >&2
+  echo "" >&2
+  echo "  The 'rm -rf node_modules bun.lock' is critical — without deleting the" >&2
+  echo "  lockfile, bun install reuses the stale resolution and skips @ff-labs/fff-bun." >&2
+  echo "" >&2
+  exit 1
+fi
+
+# Check 5: verify other critical packages that opencode imports at startup
+# These are packages whose absence causes immediate "Cannot find module" errors.
+CRITICAL_PACKAGES=(
+  "@opentui/solid"
+  "@opentui/keymap"
+  "solid-js"
+  "effect"
+  "yargs"
+  "zod"
+)
+MISSING_PACKAGES=()
+for pkg in "${CRITICAL_PACKAGES[@]}"; do
+  if [ ! -f "$OPENCODE_ROOT/node_modules/$pkg/package.json" ]; then
+    MISSING_PACKAGES+=("$pkg")
+  fi
+done
+
+if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
+  echo "" >&2
+  echo "ERROR: Critical packages missing from node_modules:" >&2
+  for p in "${MISSING_PACKAGES[@]}"; do
+    echo "  - $p" >&2
+  done
+  echo "" >&2
+  echo "  This is likely a stale lockfile issue. Run:" >&2
+  echo "    cd $OPENCODE_ROOT && rm -rf node_modules bun.lock && bun install" >&2
+  echo "" >&2
+  exit 1
+fi
+
 # --- Exec opencode -----------------------------------------------------------
 cd "$OPENCODE_ROOT"
 
