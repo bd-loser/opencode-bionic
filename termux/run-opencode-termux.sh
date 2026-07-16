@@ -80,26 +80,40 @@ if [ ! -x "$BUN_BIN" ]; then
   exit 1
 fi
 
-# --- Verify the LD_PRELOAD shim is active ------------------------------------
-# The bun launcher ($PREFIX/bin/bun) should already set this. If we're invoked
-# from a context where it's not set (e.g. a custom wrapper), re-exec through
-# the launcher to pick it up.
+# --- Verify $PREFIX/bin/bun is the launcher (not the raw binary) -------------
+# The bun-termux launcher ($PREFIX/bin/bun) is a shell script that sets
+# LD_PRELOAD=libbun-android-fix.so + libbun-mte-fix.so and MEMTAG_OPTIONS=off
+# before exec'ing the raw bun binary at $PREFIX/lib/bun-termux/bun.
+#
+# If the user (or a misconfigured install) replaced $PREFIX/bin/bun with the
+# raw binary, the shims won't be loaded and FFI will SIGABRT (MTE pointer
+# truncation) or SELinux will block directory walks.
+#
+# We detect this by checking if $BUN_BIN starts with the shebang
+# "#!/data/data/com.termux/files/usr/bin/bash" (launcher) vs "#!/bin/sh" or
+# being an ELF binary (raw bun).
 SHIM="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
+RAW_BUN="/data/data/com.termux/files/usr/lib/bun-termux/bun"
+
 if [ -f "$SHIM" ]; then
-  case ":${LD_PRELOAD:-}:" in
-    *":$SHIM:"*) : ;;  # already loaded
-    *)
-      # Not loaded. Re-exec through the bun launcher so it gets set up.
-      # The launcher will set LD_PRELOAD and MEMTAG_OPTIONS, then exec the
-      # raw bun binary. We just need to make sure we use the launcher, not
-      # the raw binary.
-      if [ "$BUN_BIN" = "/data/data/com.termux/files/usr/lib/bun-termux/bun" ]; then
-        # User overrode BUN_BIN to the raw binary — switch to the launcher.
+  # Check if BUN_BIN is the launcher script (text) or the raw binary (ELF)
+  BUN_TYPE=$(file "$BUN_BIN" 2>/dev/null | head -1 || echo "unknown")
+
+  case "$BUN_TYPE" in
+    *"Bourne-Again shell script"*|*"ASCII text"*|*"shell script"*)
+      # It's a shell script — good, it's the launcher
+      :
+      ;;
+    *"ELF"*|*"executable"*)
+      # It's the raw binary — bad! Switch to the launcher if it exists.
+      if [ -x "$PREFIX/bin/bun" ] && [ "$BUN_BIN" != "$PREFIX/bin/bun" ]; then
+        echo "Warning: $BUN_BIN is the raw bun binary, not the launcher." >&2
+        echo "  Switching to $PREFIX/bin/bun (the launcher) which sets LD_PRELOAD + MEMTAG_OPTIONS." >&2
         BUN_BIN="$PREFIX/bin/bun"
-        if [ ! -x "$BUN_BIN" ]; then
-          echo "Error: bun launcher not at $BUN_BIN. Install bun-termux." >&2
-          exit 1
-        fi
+      else
+        echo "Warning: $BUN_BIN appears to be the raw binary, not the launcher." >&2
+        echo "  FFI may SIGABRT. Install/reinstall bun-termux:" >&2
+        echo "  curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash" >&2
       fi
       ;;
   esac
@@ -150,31 +164,65 @@ while [[ $# -gt 0 ]]; do
 done
 
 # --- Print environment summary (for debugging) -------------------------------
+# Note: LD_PRELOAD shown here is the PARENT shell's value. The bun launcher
+# ($BUN_BIN) will set its own LD_PRELOAD when it execs the raw bun binary.
+# So even if LD_PRELOAD shows only termux-exec here, the actual bun process
+# WILL have libbun-android-fix.so + libbun-mte-fix.so loaded (because
+# $BUN_BIN is the launcher script, not the raw binary).
 echo "==========================================" >&2
 echo "opencode-termux launcher" >&2
 echo "==========================================" >&2
 echo "  OPENCODE_ROOT : $OPENCODE_ROOT" >&2
 echo "  BUN_BIN       : $BUN_BIN" >&2
+echo "  BUN_BIN type  : $(file -b "$BUN_BIN" 2>/dev/null | head -1 || echo '?')" >&2
 echo "  PREFIX        : ${PREFIX:-<unset>}" >&2
 echo "  TMPDIR        : $TMPDIR" >&2
 echo "  HOME          : $HOME" >&2
 echo "  TERM          : $TERM" >&2
-echo "  LD_PRELOAD    : ${LD_PRELOAD:-<unset>}" >&2
-echo "  MEMTAG_OPTIONS: $MEMTAG_OPTIONS" >&2
+echo "  MEMTAG_OPTIONS: $MEMTAG_OPTIONS (will be picked up by bun launcher)" >&2
 echo "  Args          : ${PASS_THROUGH[*]:-<none>}" >&2
 echo "==========================================" >&2
 
 # --- Verify patches are applied ----------------------------------------------
-if [ ! -f "$OPENCODE_ROOT/node_modules/@opentui/core/src/zig.ts" ] && \
-   [ ! -f "$OPENCODE_ROOT/packages/opencode/node_modules/@opentui/core/src/zig.ts" ]; then
+# With Approach B, @opentui/core is overridden to @xincli/opentui-core which
+# ships compiled JS (index.js), not TS source. Check for both layouts.
+
+# Check 1: is @opentui/core installed at all?
+OPENTUI_CORE_FOUND=""
+for p in \
+  "$OPENCODE_ROOT/node_modules/@opentui/core/package.json" \
+  "$OPENCODE_ROOT/node_modules/@xincli/opentui-core/package.json"; do
+  if [ -f "$p" ]; then
+    OPENTUI_CORE_FOUND="$p"
+    break
+  fi
+done
+
+if [ -z "$OPENTUI_CORE_FOUND" ]; then
   echo "Warning: @opentui/core not found in node_modules." >&2
   echo "  Run 'bun install' in $OPENCODE_ROOT first." >&2
+else
+  # Check 2: is it the @xincli fork (Approach B) or upstream (Approach A)?
+  OPENTUI_CORE_NAME=$(python3 -c "import json; print(json.load(open('$OPENTUI_CORE_FOUND')).get('name','?'))" 2>/dev/null)
+  if [ "$OPENTUI_CORE_NAME" = "@xincli/opentui-core" ]; then
+    # Approach B: verify the compiled JS has Termux detection
+    if grep -rq "com.termux" "$OPENCODE_ROOT/node_modules/@opentui/core/" 2>/dev/null; then
+      :
+    else
+      echo "Warning: @xincli/opentui-core is installed but Termux detection not found in compiled JS." >&2
+      echo "  The package may be corrupted. Try: rm -rf node_modules/@opentui && bun install" >&2
+    fi
+  fi
 fi
 
-if ! grep -rq "OPENCODE_TERMUX_FIX" "$OPENCODE_ROOT/node_modules/@opentui/core/" 2>/dev/null; then
-  echo "Warning: Termux patches not detected in @opentui/core." >&2
-  echo "  Run: bash $SCRIPT_DIR/apply-termux-patches.sh" >&2
-  echo "  (warning only — continuing)" >&2
+# Check 3: is the native .so installed?
+SO_PATH="$OPENCODE_ROOT/node_modules/@xincli/opentui-core-android-arm64/libopentui.so"
+if [ -f "$SO_PATH" ]; then
+  :
+else
+  echo "Warning: @xincli/opentui-core-android-arm64/libopentui.so not found." >&2
+  echo "  Run: bash $SCRIPT_DIR/apply-termux-patches.sh && bun install" >&2
+  echo "  (warning only — opencode will crash at startup if .so is missing)" >&2
 fi
 
 # --- Exec opencode -----------------------------------------------------------

@@ -259,6 +259,189 @@ PYEOF
 fi
 
 # =============================================================================
+# PATCH 1b: bunfig.toml — add @xincli/* to minimumReleaseAgeExcludes
+# =============================================================================
+#
+# Root cause:
+#   opencode's bunfig.toml has `minimumReleaseAge = 259200` (3 days). Packages
+#   published less than 3 days ago are blocked. The excludes list has
+#   `@opentui/core` (and all its platform variants) but NOT `@xincli/opentui-core`
+#   or `@xincli/opentui-core-android-arm64`. Since the user just published
+#   these to npm, `bun install` fails with:
+#     error: No version matching "@xincli/opentui-core" found for specifier
+#            "npm:@xincli/opentui-core@0.4.8" (blocked by minimum-release-age)
+#
+# Fix:
+#   Add `@xincli/opentui-core` and `@xincli/opentui-core-android-arm64` to the
+#   `minimumReleaseAgeExcludes` array in bunfig.toml.
+#
+#   We also add them to the override excludes in package.json (Bun's
+#   `minimumReleaseAgeExcludes` in bunfig.toml is the primary mechanism, but
+#   having them documented in both places is belt-and-suspenders).
+# =============================================================================
+
+echo ""
+echo "=== Patch 1b: bunfig.toml — add @xincli/* to minimumReleaseAgeExcludes ==="
+
+BUNFIG_FILE="$OPENCODE_ROOT/bunfig.toml"
+
+if [ ! -f "$BUNFIG_FILE" ]; then
+  fail "$BUNFIG_FILE not found"
+else
+  if grep -q "@xincli/opentui-core-android-arm64" "$BUNFIG_FILE" 2>/dev/null; then
+    skip "bunfig.toml already has @xincli excludes"
+  else
+    info "patching: $BUNFIG_FILE"
+
+    python3 <<PYEOF
+import re, sys
+
+with open("$BUNFIG_FILE", "r", encoding="utf-8") as f:
+    content = f.read()
+
+# Find the minimumReleaseAgeExcludes line. It's a single long line:
+#   minimumReleaseAgeExcludes = ["@ai-sdk/...", ..., "@opentui/core", ..., "electron-publish"]
+# We append our @xincli packages before the closing bracket.
+
+# Strategy: find the closing `]"` of the minimumReleaseAgeExcludes array and
+# insert our entries before it. Use regex to match the array content.
+pattern = r'(minimumReleaseAgeExcludes\s*=\s*\[)([^\]]*)(\])'
+m = re.search(pattern, content)
+if not m:
+    print("    [FAIL] could not find minimumReleaseAgeExcludes array", file=sys.stderr)
+    sys.exit(1)
+
+array_content = m.group(2)
+# Check if @xincli already in the array (idempotency)
+if "@xincli/opentui-core-android-arm64" in array_content:
+    print("    [SKIP] @xincli already in excludes (idempotency check)")
+    sys.exit(0)
+
+# Insert our entries. Preserve the existing format (comma-separated, quoted strings).
+# Add a comma if the array doesn't end with one.
+stripped = array_content.rstrip()
+if stripped and not stripped.endswith(","):
+    stripped += ","
+# Add a space after the comma for readability if there's content
+if stripped and not stripped.endswith(" "):
+    stripped += " "
+
+new_entries = '"@xincli/opentui-core", "@xincli/opentui-core-android-arm64"'
+new_array_content = stripped + new_entries
+
+new_content = content[:m.start(2)] + new_array_content + content[m.end(2):]
+
+with open("$BUNFIG_FILE", "w", encoding="utf-8") as f:
+    f.write(new_content)
+
+print("    [1b] Added @xincli/opentui-core + @xincli/opentui-core-android-arm64 to minimumReleaseAgeExcludes")
+PYEOF
+
+    if grep -q "@xincli/opentui-core-android-arm64" "$BUNFIG_FILE" 2>/dev/null; then
+      ok "bunfig.toml patched"
+    else
+      fail "bunfig.toml patch verification failed"
+    fi
+  fi
+fi
+
+# =============================================================================
+# PATCH 1c: package.json — remove tree-sitter-* from trustedDependencies
+# =============================================================================
+#
+# Root cause:
+#   opencode's package.json has `trustedDependencies` listing packages whose
+#   install scripts (postinstall) are allowed to run. This includes:
+#     - "tree-sitter"
+#     - "tree-sitter-bash"
+#     - "tree-sitter-powershell"
+#     - "web-tree-sitter"
+#
+#   tree-sitter-powershell's install script runs `node-gyp-build` which loads
+#   a native N-API binary. On Termux with MTE (Memory Tagging Extension),
+#   this crashes with:
+#     Pointer tag for 0x... was truncated
+#     error: install script from "tree-sitter-powershell" terminated by SIGABRT
+#
+#   The MTE fix shim (libbun-mte-fix.so) is supposed to handle this by
+#   stripping tags from malloc's return values, but it doesn't catch all
+#   cases — specifically, N-API's native module loading path uses a different
+#   code path that bypasses the shim.
+#
+# Fix:
+#   Remove tree-sitter, tree-sitter-bash, tree-sitter-powershell, and
+#   web-tree-sitter from trustedDependencies. This makes Bun skip their
+#   install scripts. The packages themselves still install (their .wasm files,
+#   .js files, etc.) — only the native compilation/loading is skipped.
+#
+#   opencode only uses the .wasm files from tree-sitter-bash and
+#   tree-sitter-powershell (via web-tree-sitter's WASM runtime). It does NOT
+#   use the native N-API bindings. So skipping the install scripts is safe —
+#   opencode's shell tool (which parses bash/powershell ASTs) will work fine
+#   using the WASM files.
+#
+#   If a future opencode feature needs the native tree-sitter bindings, we'd
+#   need a different fix (e.g. patching node-gyp-build to handle MTE, or
+#   cross-compiling the native bindings for Bionic).
+# =============================================================================
+
+echo ""
+echo "=== Patch 1c: package.json — remove tree-sitter-* from trustedDependencies ==="
+
+# Check current state — list which tree-sitter entries are present
+CURRENT_TS=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+td = pkg.get('trustedDependencies', [])
+remove_set = {'tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell', 'web-tree-sitter'}
+ts_in = [x for x in td if x in remove_set]
+print(','.join(ts_in) if ts_in else 'NONE')
+" 2>/dev/null)
+
+if [ "$CURRENT_TS" = "NONE" ]; then
+  skip "tree-sitter-* already removed from trustedDependencies"
+else
+  info "current tree-sitter entries in trustedDependencies: $CURRENT_TS"
+
+  python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+td = pkg.get("trustedDependencies", [])
+remove_set = {"tree-sitter", "tree-sitter-bash", "tree-sitter-powershell", "web-tree-sitter"}
+before = len(td)
+td_filtered = [x for x in td if x not in remove_set]
+removed = before - len(td_filtered)
+pkg["trustedDependencies"] = td_filtered
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+
+print(f"    [1c] Removed {removed} tree-sitter entries from trustedDependencies")
+print(f"    Remaining trustedDependencies: {td_filtered}")
+PYEOF
+
+  # Verify
+  AFTER_TS=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+td = pkg.get('trustedDependencies', [])
+remove_set = {'tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell', 'web-tree-sitter'}
+ts_in = [x for x in td if x in remove_set]
+print(','.join(ts_in) if ts_in else 'NONE')
+" 2>/dev/null)
+
+  if [ "$AFTER_TS" = "NONE" ]; then
+    ok "tree-sitter-* removed from trustedDependencies"
+  else
+    fail "tree-sitter-* still in trustedDependencies: $AFTER_TS"
+  fi
+fi
+
+# =============================================================================
 # PATCH 2: Verify @opentui/solid and @opentui/keymap still work with override
 # =============================================================================
 #

@@ -35,8 +35,9 @@ bash termux/run-opencode-termux.sh
 
 ## What This Fork Does
 
-The ONLY hard change is in `package.json`:
+The changes are in `package.json` and `bunfig.toml` (no source files modified):
 
+**`package.json`**:
 ```jsonc
 {
   "overrides": {
@@ -49,19 +50,36 @@ The ONLY hard change is in `package.json`:
     "catalog": {
       "@opentui/core": "0.4.8"  // was 0.4.3
     }
-  }
+  },
+  "trustedDependencies": [
+    // tree-sitter, tree-sitter-bash, tree-sitter-powershell, web-tree-sitter
+    // REMOVED — their install scripts SIGABRT on Termux (MTE pointer truncation
+    // in node-gyp-build). opencode only uses the .wasm files, not native bindings.
+    "esbuild", "node-pty", "protobufjs", "electron"
+  ]
 }
 ```
 
-That's it. No source files modified. The `@xincli/opentui-core@0.4.8` package
-(published by [bd-loser/opentui](https://github.com/bd-loser/opentui)) already
-has Termux detection baked into its compiled `resolveNativePackage()` — it
-checks `process.platform === "android"` OR `(linux && $PREFIX contains
-"com.termux")` and loads `@xincli/opentui-core-android-arm64` (the native
-`libopentui.so` built against Termux Bionic).
+**`bunfig.toml`**:
+```toml
+[install]
+minimumReleaseAge = 259200
+minimumReleaseAgeExcludes = [
+  # ... existing excludes ...
+  "@xincli/opentui-core",                    # ADDED — newly published
+  "@xincli/opentui-core-android-arm64"       # ADDED — newly published
+]
+```
 
-The patch script (`termux/apply-termux-patches.sh`) automates this edit plus
-runtime checks (LD_PRELOAD shim, MEMTAG_OPTIONS, clipboard tool).
+The `@xincli/opentui-core@0.4.8` package (published by
+[bd-loser/opentui](https://github.com/bd-loser/opentui)) already has Termux
+detection baked into its compiled `resolveNativePackage()` — it checks
+`process.platform === "android"` OR `(linux && $PREFIX contains "com.termux")`
+and loads `@xincli/opentui-core-android-arm64` (the native `libopentui.so`
+built against Termux Bionic).
+
+The patch script (`termux/apply-termux-patches.sh`) automates all these edits
+plus runtime checks (LD_PRELOAD shim, MEMTAG_OPTIONS, clipboard tool).
 
 ## Files
 
@@ -149,19 +167,75 @@ The patch script also verifies (warns, doesn't fail):
 
 ## Debugging
 
+### `bun install` fails with "blocked by minimum-release-age"
+
+opencode's `bunfig.toml` has `minimumReleaseAge = 259200` (3 days). Packages
+published less than 3 days ago are blocked. The patch script adds
+`@xincli/opentui-core` and `@xincli/opentui-core-android-arm64` to the
+excludes list, but if you hit this for another package:
+
+```bash
+# Check if the package is in the excludes list
+grep "your-package-name" bunfig.toml
+
+# If not, add it manually:
+# Edit bunfig.toml → minimumReleaseAgeExcludes array → add "your-package-name"
+# Then re-run bun install
+```
+
+### `bun install` fails with "tree-sitter-powershell terminated by SIGABRT"
+
+The tree-sitter packages' install scripts run `node-gyp-build` which loads a
+native N-API binary. On Termux with MTE, this crashes:
+```
+Pointer tag for 0x... was truncated
+error: install script from "tree-sitter-powershell" terminated by SIGABRT
+```
+
+The patch script removes tree-sitter-* from `trustedDependencies` so Bun
+skips their install scripts. The packages still install (their `.wasm` files
+are available), just the native bindings aren't compiled/loaded. opencode
+only uses the `.wasm` files via `web-tree-sitter`, so this is safe.
+
+If you hit the same SIGABRT for a different package, remove it from
+`trustedDependencies` in `package.json`:
+```bash
+python3 -c "
+import json
+with open('package.json') as f: pkg = json.load(f)
+pkg['trustedDependencies'] = [x for x in pkg.get('trustedDependencies', []) if x != 'OFFENDING_PACKAGE']
+with open('package.json', 'w') as f: json.dump(pkg, f, indent=2); f.write('\n')
+"
+bun install
+```
+
+### `bun install` fails with "ENOENT reading .../@babel+core@..."
+
+This means a previous `bun install` was interrupted (e.g. by the tree-sitter
+SIGABRT) and `node_modules` is in a partially-installed state. Fix:
+```bash
+rm -rf node_modules
+bun install
+```
+
 ### opencode crashes on startup with SIGABRT
 
 MTE (Memory Tagging Extension) is tagging heap pointers. Ensure:
 ```bash
-echo "LD_PRELOAD=$LD_PRELOAD"           # should contain libbun-android-fix.so
+echo "LD_PRELOAD=$LD_PRELOAD"           # parent shell value (may differ from bun's)
 echo "MEMTAG_OPTIONS=$MEMTAG_OPTIONS"   # should be "off"
+file $PREFIX/bin/bun                    # should be "shell script" (launcher), NOT "ELF"
 ```
 
-If missing, you bypassed the bun-termux launcher. Always invoke via:
+If `$PREFIX/bin/bun` is an ELF binary (not a shell script), the bun-termux
+launcher isn't installed. Reinstall:
 ```bash
-$PREFIX/bin/bun run packages/opencode/src/index.ts
+curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
 ```
-NOT via `/data/data/com.termux/files/usr/lib/bun-termux/bun` directly.
+
+The launcher (`$PREFIX/bin/bun`) is a shell script that sets `LD_PRELOAD` to
+`libbun-android-fix.so:libbun-mte-fix.so` and `MEMTAG_OPTIONS=off` before
+exec'ing the raw bun binary at `$PREFIX/lib/bun-termux/bun`.
 
 ### opencode crashes with "opentui is not supported on the current platform"
 
