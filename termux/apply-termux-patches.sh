@@ -549,6 +549,92 @@ print(','.join(found) if found else 'NONE')
 fi
 
 # =============================================================================
+# PATCH 1e: package.json — remove stale @ff-labs/fff-bun patchedDependency
+# =============================================================================
+#
+# Root cause:
+#   opencode's root package.json has:
+#     "patchedDependencies": {
+#       "@ff-labs/fff-bun@0.9.3": "patches/@ff-labs%2Ffff-bun@0.9.3.patch",
+#       ...
+#     }
+#   But packages/core/package.json declares:
+#     "@ff-labs/fff-bun": "0.9.4"
+#   (direct version, not catalog:).
+#
+#   The patchedDependency version (0.9.3) doesn't match the resolved version
+#   (0.9.4). On normal Bun builds this might be lenient (install 0.9.4
+#   without the patch). On the Termux canary (1.3.14-canary.1), this causes
+#   the package to be silently skipped — `bun install` reports success but
+#   @ff-labs/fff-bun is NOT in node_modules. At runtime:
+#     error: Cannot find module '@ff-labs/fff-bun' from '.../fff.bun.ts'
+#
+# Fix:
+#   Remove the stale @ff-labs/fff-bun@0.9.3 entry from patchedDependencies.
+#   The patch was opencode's own fix for fff-bun's native binary resolution
+#   path. On Termux, fff-bun can't load its native binary anyway (no Bionic
+#   variant) and opencode's search.ts falls back to ripgrep. So losing this
+#   patch is harmless on Termux.
+#
+#   We do NOT remove other patchedDependencies entries — they match their
+#   declared versions and may be needed at runtime (e.g. photon-node's
+#   wbindgen fix, solid-js patches, effect patches).
+# =============================================================================
+
+echo ""
+echo "=== Patch 1e: package.json — remove stale @ff-labs/fff-bun patchedDependency ==="
+
+FFF_PATCH_KEY='@ff-labs/fff-bun@0.9.3'
+
+# Check current state
+HAS_FFF_PATCH=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+patched = pkg.get('patchedDependencies', {})
+print('YES' if '$FFF_PATCH_KEY' in patched else 'NO')
+" 2>/dev/null)
+
+if [ "$HAS_FFF_PATCH" = "NO" ]; then
+  skip "@ff-labs/fff-bun@0.9.3 not in patchedDependencies (already removed)"
+else
+  info "found stale $FFF_PATCH_KEY in patchedDependencies"
+
+  python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+patched = pkg.get("patchedDependencies", {})
+key = "$FFF_PATCH_KEY"
+if key in patched:
+    patch_file = patched.pop(key)
+    print(f"    [1e] Removed {key!r} -> {patch_file!r}")
+    print(f"    Remaining patchedDependencies: {len(patched)} entries")
+else:
+    print(f"    [SKIP] {key!r} not found")
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+
+  # Verify
+  AFTER_HAS_FFF=$(python3 -c "
+import json
+with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
+patched = pkg.get('patchedDependencies', {})
+print('YES' if '$FFF_PATCH_KEY' in patched else 'NO')
+" 2>/dev/null)
+
+  if [ "$AFTER_HAS_FFF" = "NO" ]; then
+    ok "@ff-labs/fff-bun@0.9.3 removed from patchedDependencies"
+  else
+    fail "@ff-labs/fff-bun@0.9.3 still in patchedDependencies"
+  fi
+fi
+
+# =============================================================================
 # PATCH 2: Verify @opentui/solid and @opentui/keymap still work with override
 # =============================================================================
 #

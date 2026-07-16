@@ -133,6 +133,27 @@ print(f"    [1d] Removed {len(removed)} root scripts: {removed}")
 PYEOF
 
 echo ""
+echo "=== Patch 1e: package.json — remove stale @ff-labs/fff-bun patchedDependency ==="
+python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+patched = pkg.get("patchedDependencies", {})
+key = "@ff-labs/fff-bun@0.9.3"
+if key in patched:
+    patch_file = patched.pop(key)
+    print(f"    [1e] Removed {key!r} -> {patch_file!r}")
+else:
+    print(f"    [1e] {key!r} not found (already removed)")
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+PYEOF
+
+echo ""
 echo "=== Verification ==="
 
 python3 - "$TMP_DIR/package.json" "$TMP_DIR/bunfig.toml" <<'PYEOF'
@@ -186,6 +207,18 @@ checks.append(("dev script preserved",
                "dev" in scripts, True))
 checks.append(("typecheck script preserved",
                "typecheck" in scripts, True))
+
+# Patch 1e checks — @ff-labs/fff-bun removed from patchedDependencies
+patched = pkg.get("patchedDependencies", {})
+checks.append(("@ff-labs/fff-bun@0.9.3 removed from patchedDependencies",
+               "@ff-labs/fff-bun@0.9.3" not in patched, True))
+# Other patchedDependencies should still be there
+checks.append(("solid-js patch preserved",
+               "solid-js@1.9.10" in patched, True))
+checks.append(("effect patch preserved",
+               "effect@4.0.0-beta.83" in patched, True))
+checks.append(("photon-node patch preserved",
+               "@silvia-odwyer/photon-node@0.3.4" in patched, True))
 
 # Existing fields intact
 checks.append(("name", pkg.get("name"), "opencode"))
