@@ -100,10 +100,11 @@ mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 
 # Minimal package.json — only 3 deps
-# Since 0.4.9, we publish @xincli/opentui-solid which directly depends on
-# @xincli/opentui-core. So we no longer need the `overrides` hack —
-# we just install @xincli/opentui-solid directly (via npm: alias on
-# the @opentui/solid specifier).
+# Hybrid approach: @xincli/opentui-core is published (catalog pin), but
+# @xincli/opentui-solid is NOT yet published, so we use upstream
+# @opentui/solid@0.4.3 + overrides to force @opentui/core → @xincli/opentui-core.
+# Once @xincli/opentui-solid is published, switch to: "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9"
+# and remove the overrides block.
 cat > package.json <<'EOF'
 {
   "name": "opentui-test",
@@ -112,15 +113,18 @@ cat > package.json <<'EOF'
   "private": true,
   "dependencies": {
     "@opentui/core": "npm:@xincli/opentui-core@0.4.9",
-    "@opentui/solid": "npm:@xincli/opentui-solid@0.4.9",
+    "@opentui/solid": "0.4.3",
     "solid-js": "1.9.10"
   },
   "optionalDependencies": {
     "@xincli/opentui-core-android-arm64": "0.4.9"
+  },
+  "overrides": {
+    "@opentui/core": "npm:@xincli/opentui-core@0.4.9"
   }
 }
 EOF
-ok "package.json created (clean catalog pins, no overrides needed — @xincli/opentui-solid@0.4.9 directly depends on @xincli/opentui-core)"
+ok "package.json created (hybrid: catalog pin for core + overrides for solid's nested @opentui/core)"
 
 # --- bun install -------------------------------------------------------------
 echo ""
