@@ -100,6 +100,12 @@ mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 
 # Minimal package.json — only 3 deps
+# CRITICAL: the `overrides` field is what makes this work. Without it,
+# @opentui/solid@0.4.3 brings its OWN nested copy of upstream @opentui/core@0.4.3
+# (which has no Termux detection) and crashes with
+# "opentui is not supported on the current platform: android-arm64".
+# The `overrides` field forces ALL @opentui/core resolutions (including
+# @opentui/solid's nested dep) to use @xincli/opentui-core@0.4.8.
 cat > package.json <<'EOF'
 {
   "name": "opentui-test",
@@ -113,10 +119,13 @@ cat > package.json <<'EOF'
   },
   "optionalDependencies": {
     "@xincli/opentui-core-android-arm64": "0.4.8"
+  },
+  "overrides": {
+    "@opentui/core": "npm:@xincli/opentui-core@0.4.8"
   }
 }
 EOF
-ok "package.json created"
+ok "package.json created (with overrides to force global @xincli resolution)"
 
 # --- bun install -------------------------------------------------------------
 echo ""
@@ -174,6 +183,25 @@ if [ -d "node_modules/@opentui/solid" ]; then
 else
   fail "@opentui/solid not found"
   exit 1
+fi
+
+# CRITICAL: verify @opentui/solid does NOT have a nested upstream @opentui/core
+# If it does, the `overrides` field didn't work and the test will fail with
+# "opentui is not supported on the current platform: android-arm64".
+NESTED_CORE="node_modules/@opentui/solid/node_modules/@opentui/core"
+if [ -d "$NESTED_CORE" ]; then
+  NESTED_NAME=$("$BUN_BIN" -e "console.log(require('./$NESTED_CORE/package.json').name)" 2>/dev/null || echo "?")
+  if [ "$NESTED_NAME" = "@xincli/opentui-core" ]; then
+    ok "nested @opentui/core inside @opentui/solid is @xincli fork (override worked)"
+  else
+    fail "nested @opentui/core inside @opentui/solid is upstream ($NESTED_NAME)"
+    echo "  The overrides field didn't cascade to @opentui/solid's nested dep." >&2
+    echo "  This will cause 'opentui is not supported on android-arm64' at runtime." >&2
+    echo "  Bun version may not support overrides with npm: aliases." >&2
+    exit 1
+  fi
+else
+  ok "no nested @opentui/core inside @opentui/solid (hoisted — override working)"
 fi
 
 # --- Create test app ---------------------------------------------------------
