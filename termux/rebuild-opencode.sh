@@ -192,16 +192,33 @@ for pkg in "@opentui/core" "@opentui/solid" "@opentui/keymap" "@xincli/opentui-c
   fi
 done
 
-# Verify @opentui/core resolves to the @xincli fork. Search all workspace
-# node_modules (Bun's isolated linker can put it anywhere) instead of only
-# hardcoded paths — otherwise a layout change silently passes verification.
+# Verify @opentui/core resolves to the @xincli fork. Bun's isolated linker
+# puts @opentui/core in packages/<ws>/node_modules as a symlink into .bun/,
+# so we probe the known locations. bash -f follows symlinks (find does not
+# by default, which is why the previous find-based check failed).
 CORE_PKG_PATH=""
-while IFS= read -r p; do
-  if [ -f "$p" ]; then
-    CORE_PKG_PATH="$p"
+for candidate in \
+  "$OPENCODE_ROOT/node_modules/@opentui/core/package.json" \
+  "$OPENCODE_ROOT/packages/opencode/node_modules/@opentui/core/package.json" \
+  "$OPENCODE_ROOT/packages/tui/node_modules/@opentui/core/package.json" \
+  "$OPENCODE_ROOT/packages/core/node_modules/@opentui/core/package.json" \
+  "$OPENCODE_ROOT/packages/cli/node_modules/@opentui/core/package.json"
+do
+  if [ -f "$candidate" ]; then
+    CORE_PKG_PATH="$candidate"
     break
   fi
-done < <(find "$OPENCODE_ROOT" -path '*/node_modules/@opentui/core/package.json' -not -path '*/.bun/*' 2>/dev/null)
+done
+
+# Fallback: glob any packages/*/node_modules match we didn't hardcode
+if [ -z "$CORE_PKG_PATH" ]; then
+  for candidate in "$OPENCODE_ROOT"/packages/*/node_modules/@opentui/core/package.json; do
+    if [ -f "$candidate" ]; then
+      CORE_PKG_PATH="$candidate"
+      break
+    fi
+  done
+fi
 
 if [ -z "$CORE_PKG_PATH" ]; then
   fail "@opentui/core not resolvable in any node_modules — catalog pin missing?"
