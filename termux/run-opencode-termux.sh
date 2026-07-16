@@ -224,29 +224,28 @@ else
   echo "  (warning only — opencode will crash at startup if .so is missing)" >&2
 fi
 
-# Check 4: CRITICAL — verify @ff-labs/fff-bun is actually in node_modules
-# This is the package that fails with "Cannot find module" if the lockfile
-# is stale. The stale bun.lock (from upstream opencode) has a cached
-# resolution that skips @ff-labs/fff-bun when the patchedDependencies
-# version mismatches. Even after we remove the patchedDependencies entry
-# (Patch 1e), the lockfile keeps the old resolution. The fix is to delete
-# both node_modules AND bun.lock before re-running bun install.
+# Check 4: verify @ff-labs/fff-bun is either installed OR fff.bun.ts is patched
+# @ff-labs/fff-bun has "os": ["darwin","linux","win32"] — Bun skips it on Android.
+# Patch 1f modifies fff.bun.ts to use try/catch require() so the missing package
+# doesn't crash at import time. So either the package is installed (unlikely on
+# Termux) OR the source is patched (expected on Termux).
 FFF_PATH="$OPENCODE_ROOT/node_modules/@ff-labs/fff-bun/package.json"
-if [ ! -f "$FFF_PATH" ]; then
+FFF_TS="$OPENCODE_ROOT/packages/core/src/filesystem/fff.bun.ts"
+FFF_TS_PATCHED=$(grep -q "opencode-bionic-patched" "$FFF_TS" 2>/dev/null && echo "YES" || echo "NO")
+
+if [ -f "$FFF_PATH" ]; then
+  : # package installed — normal flow
+elif [ "$FFF_TS_PATCHED" = "YES" ]; then
+  : # package not installed but source is patched — will fall back to ripgrep
+else
   echo "" >&2
-  echo "ERROR: @ff-labs/fff-bun is NOT in node_modules." >&2
-  echo "  This is a stale lockfile issue. The bun.lock has a cached resolution" >&2
-  echo "  that skips this package (from the old patchedDependencies mismatch)." >&2
+  echo "ERROR: @ff-labs/fff-bun is NOT in node_modules AND fff.bun.ts is NOT patched." >&2
+  echo "  On Termux, @ff-labs/fff-bun is skipped by Bun (os restriction)." >&2
+  echo "  Patch 1f in apply-termux-patches.sh handles this by lazy-loading the import." >&2
   echo "" >&2
-  echo "  FIX — run these exact commands:" >&2
-  echo "    cd $OPENCODE_ROOT" >&2
-  echo "    rm -rf node_modules bun.lock" >&2
+  echo "  FIX — run:" >&2
   echo "    bash termux/apply-termux-patches.sh" >&2
-  echo "    bun install" >&2
   echo "    bash termux/run-opencode-termux.sh" >&2
-  echo "" >&2
-  echo "  The 'rm -rf node_modules bun.lock' is critical — without deleting the" >&2
-  echo "  lockfile, bun install reuses the stale resolution and skips @ff-labs/fff-bun." >&2
   echo "" >&2
   exit 1
 fi

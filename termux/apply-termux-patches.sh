@@ -635,6 +635,172 @@ print('YES' if '$FFF_PATCH_KEY' in patched else 'NO')
 fi
 
 # =============================================================================
+# PATCH 1f: packages/core/src/filesystem/fff.bun.ts — lazy-load @ff-labs/fff-bun
+# =============================================================================
+#
+# Root cause:
+#   @ff-labs/fff-bun@0.9.4 has "os": ["darwin", "linux", "win32"] in its
+#   package.json. On Termux, process.platform === "android" (even under Bun,
+#   the installer checks the real OS). Since "android" is not in the os list,
+#   Bun's installer SILENTLY SKIPS the entire package — it's never fetched,
+#   never placed in node_modules.
+#
+#   opencode's fff.bun.ts has a top-level static import:
+#     import { FileFinder, type DirItem, ... } from "@ff-labs/fff-bun"
+#   When the package isn't installed, this throws immediately at module load:
+#     error: Cannot find module '@ff-labs/fff-bun' from '.../fff.bun.ts'
+#   This crashes opencode BEFORE it can fall back to ripgrep.
+#
+#   Note: this is NOT a lockfile issue, NOT a patchedDependencies issue, NOT
+#   a trustedDependencies issue. The package itself rejects Android via its
+#   os field. Even a completely fresh install (no lockfile, no node_modules)
+#   will skip the package.
+#
+# Fix:
+#   Patch fff.bun.ts to use a try/catch require() pattern instead of a static
+#   ESM import for the FileFinder value. The type-only imports (DirItem,
+#   FileItem, etc.) are safe — they're erased at runtime by TypeScript/Bun.
+#
+#   If the package isn't installed (Termux), FileFinder is null, available()
+#   returns false, and opencode's search.ts falls back to ripgrep — which is
+#   the EXISTING behavior for when fff-bun's native binary can't load.
+#
+#   This is a SOURCE PATCH (modifies a .ts file in the opencode repo), not a
+#   package.json patch. It's idempotent — the marker comment prevents
+#   re-patching.
+# =============================================================================
+
+echo ""
+echo "=== Patch 1f: fff.bun.ts — lazy-load @ff-labs/fff-bun (os restriction bypass) ==="
+
+FFF_BUN_TS="$OPENCODE_ROOT/packages/core/src/filesystem/fff.bun.ts"
+
+if [ ! -f "$FFF_BUN_TS" ]; then
+  fail "$FFF_BUN_TS not found"
+else
+  if grep -q "$PATCH_MARKER" "$FFF_BUN_TS" 2>/dev/null; then
+    skip "fff.bun.ts already patched"
+  else
+    info "patching: $FFF_BUN_TS"
+
+    python3 <<PYEOF
+import re, sys
+
+with open("$FFF_BUN_TS", "r", encoding="utf-8") as f:
+    content = f.read()
+
+marker = "$PATCH_MARKER"
+patched = 0
+
+# Step 1: Replace the static value import (FileFinder) with a type-only import
+# + a lazy require(). The type imports (DirItem, FileItem, etc.) are preserved
+# as type-only — they're erased at runtime.
+old_import = r'''import \{
+  FileFinder,
+  type DirItem,
+  type DirSearchResult,
+  type FileItem,
+  type GrepCursor,
+  type GrepMatch,
+  type GrepResult,
+  type InitOptions,
+  type MixedItem,
+  type MixedSearchResult,
+  type SearchResult,
+\} from "@ff-labs/fff-bun"'''
+
+new_import = '''import type {
+  DirItem,
+  DirSearchResult,
+  FileItem,
+  GrepCursor,
+  GrepMatch,
+  GrepResult,
+  InitOptions,
+  MixedItem,
+  MixedSearchResult,
+  SearchResult,
+} from "@ff-labs/fff-bun"
+
+// ''' + marker + ''' [Patch 1f]: Lazy-load @ff-labs/fff-bun runtime value.
+// Root cause: @ff-labs/fff-bun@0.9.4 has "os": ["darwin","linux","win32"] in
+// its package.json. On Termux (process.platform === "android"), Bun's installer
+// silently skips the package — it's never placed in node_modules. A static
+// ESM import would throw "Cannot find module" at startup, crashing opencode
+// before it can fall back to ripgrep.
+// Fix: use require() (which can be try/caught) instead of a static import.
+// If the package isn't installed, FileFinder is null and available() returns
+// false — opencode's search.ts then uses the ripgrep fallback (existing behavior).
+type FileFinderType = typeof import("@ff-labs/fff-bun")["FileFinder"]
+let FileFinder: FileFinderType | null
+try {
+  FileFinder = require("@ff-labs/fff-bun").FileFinder
+} catch {
+  FileFinder = null
+}'''
+
+new_content, n = re.subn(old_import, new_import, content, count=1)
+if n == 1:
+    content = new_content
+    patched += 1
+    print("    [1f-a] Replaced static import with lazy require() + null guard")
+else:
+    print("    [FAIL] could not find the static import block", file=sys.stderr)
+    sys.exit(1)
+
+# Step 2: Patch available() to handle null FileFinder
+old_available = r'''export function available\(\) \{
+  return FileFinder\.isAvailable\(\)
+\}'''
+
+new_available = '''export function available() {
+  // ''' + marker + ''' [Patch 1f]: null guard for missing @ff-labs/fff-bun
+  if (!FileFinder) return false
+  return FileFinder.isAvailable()
+}'''
+
+new_content, n = re.subn(old_available, new_available, content, count=1)
+if n == 1:
+    content = new_content
+    patched += 1
+    print("    [1f-b] Patched available() with null guard")
+else:
+    print("    [FAIL] could not find available() function", file=sys.stderr)
+    sys.exit(1)
+
+# Step 3: Patch create() to handle null FileFinder
+old_create = r'''export function create\(opts: Init\): Result<Picker> \{
+  const made = FileFinder\.create\(opts\)'''
+
+new_create = '''export function create(opts: Init): Result<Picker> {
+  // ''' + marker + ''' [Patch 1f]: null guard for missing @ff-labs/fff-bun
+  if (!FileFinder) return { ok: false, error: "fff-bun not installed on this platform (os restriction)" }
+  const made = FileFinder.create(opts)'''
+
+new_content, n = re.subn(old_create, new_create, content, count=1)
+if n == 1:
+    content = new_content
+    patched += 1
+    print("    [1f-c] Patched create() with null guard")
+else:
+    print("    [FAIL] could not find create() function", file=sys.stderr)
+    sys.exit(1)
+
+with open("$FFF_BUN_TS", "w", encoding="utf-8") as f:
+    f.write(content)
+
+print(f"    Total: {patched}/3 sub-patches applied to fff.bun.ts")
+PYEOF
+
+    if grep -q "$PATCH_MARKER" "$FFF_BUN_TS" 2>/dev/null; then
+      ok "fff.bun.ts patched (lazy require + null guards)"
+    else
+      fail "fff.bun.ts patch verification failed"
+    fi
+  fi
+fi
+
+# =============================================================================
 # PATCH 2: Verify @opentui/solid and @opentui/keymap still work with override
 # =============================================================================
 #
