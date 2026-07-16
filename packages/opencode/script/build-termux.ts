@@ -79,7 +79,7 @@ await $`mkdir -p dist/${name}/bin`
 // We use "bun" (literal) to use the current binary.
 
 console.log("  Compiling with Bun.build()...")
-console.log(`  target: "bun" (current running Bun — patched bun-termux)`)
+console.log(`  target: "bun-linux-arm64" (matches current platform — uses current bun-termux)`)
 console.log(`  outfile: dist/${name}/bin/opencode`)
 
 const result = await Bun.build({
@@ -96,8 +96,19 @@ const result = await Bun.build({
     autoloadDotenv: false,
     autoloadTsconfig: true,
     autoloadPackageJson: true,
-    // KEY DIFFERENCE from upstream: use "bun" (current binary) not "bun-linux-arm64"
-    target: "bun" as any,
+    // KEY: use "bun-linux-arm64" — Bun normalizes android→linux, so this
+    // matches the current platform. When the target matches the current
+    // platform, Bun uses the CURRENTLY RUNNING Bun binary (your patched
+    // bun-termux) instead of downloading a glibc Bun from npm.
+    //
+    // Bun requires the target to start with "bun-" — "bun" alone throws:
+    //   TypeError: Expected compile target to start with 'bun-', got bun
+    //
+    // Upstream build.ts uses `name.replace(pkg.name, "bun")` which produces
+    // "bun-linux-arm64" for the linux-arm64 target. We do the same — the
+    // difference is we ONLY build this one target (not all platforms), and
+    // we skip the web UI embed + model data generation.
+    target: "bun-linux-arm64" as any,
     outfile: `dist/${name}/bin/opencode`,
     execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
   },
