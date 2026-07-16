@@ -182,102 +182,71 @@ echo "  MEMTAG_OPTIONS: $MEMTAG_OPTIONS (will be picked up by bun launcher)" >&2
 echo "  Args          : ${PASS_THROUGH[*]:-<none>}" >&2
 echo "==========================================" >&2
 
-# --- Verify patches are applied ----------------------------------------------
-# With Approach B, @opentui/core is overridden to @xincli/opentui-core which
-# ships compiled JS (index.js), not TS source. Check for both layouts.
+# --- Pre-flight checks (WARNINGS ONLY — never hard-fail) --------------------
+# Bun's workspace install puts packages in the WORKSPACE PACKAGE's own
+# node_modules/ (e.g. packages/opencode/node_modules/@opentui/solid), NOT the
+# root node_modules/. The root node_modules/ only has the root package's direct
+# devDeps. So we check BOTH locations. We NEVER hard-fail — if something is
+# genuinely missing, opencode will give a clear "Cannot find module" error at
+# the actual import site, which is more useful than our pre-flight guess.
 
-# Check 1: is @opentui/core installed at all?
-OPENTUI_CORE_FOUND=""
-for p in \
-  "$OPENCODE_ROOT/node_modules/@opentui/core/package.json" \
-  "$OPENCODE_ROOT/node_modules/@xincli/opentui-core/package.json"; do
-  if [ -f "$p" ]; then
-    OPENTUI_CORE_FOUND="$p"
-    break
+# Helper: find a package's package.json in root OR workspace node_modules
+find_pkg() {
+  local pkg="$1"
+  # Check root node_modules (root devDeps + optionalDeps)
+  if [ -f "$OPENCODE_ROOT/node_modules/$pkg/package.json" ]; then
+    echo "$OPENCODE_ROOT/node_modules/$pkg/package.json"
+    return 0
   fi
-done
-
-if [ -z "$OPENTUI_CORE_FOUND" ]; then
-  echo "Warning: @opentui/core not found in node_modules." >&2
-  echo "  Run 'bun install' in $OPENCODE_ROOT first." >&2
-else
-  # Check 2: is it the @xincli fork (Approach B) or upstream (Approach A)?
-  OPENTUI_CORE_NAME=$(python3 -c "import json; print(json.load(open('$OPENTUI_CORE_FOUND')).get('name','?'))" 2>/dev/null)
-  if [ "$OPENTUI_CORE_NAME" = "@xincli/opentui-core" ]; then
-    # Approach B: verify the compiled JS has Termux detection
-    if grep -rq "com.termux" "$OPENCODE_ROOT/node_modules/@opentui/core/" 2>/dev/null; then
-      :
-    else
-      echo "Warning: @xincli/opentui-core is installed but Termux detection not found in compiled JS." >&2
-      echo "  The package may be corrupted. Try: rm -rf node_modules/@opentui && bun install" >&2
+  # Check workspace packages' node_modules (Bun's isolated layout)
+  for ws in opencode core tui cli; do
+    if [ -f "$OPENCODE_ROOT/packages/$ws/node_modules/$pkg/package.json" ]; then
+      echo "$OPENCODE_ROOT/packages/$ws/node_modules/$pkg/package.json"
+      return 0
     fi
+  done
+  return 1
+}
+
+# Check: @opentui/core (should be the @xincli fork via override)
+OPENTUI_CORE_PATH=$(find_pkg "@opentui/core" 2>/dev/null || true)
+if [ -n "$OPENTUI_CORE_PATH" ]; then
+  CORE_NAME=$(python3 -c "import json; print(json.load(open('$OPENTUI_CORE_PATH')).get('name','?'))" 2>/dev/null)
+  if [ "$CORE_NAME" = "@xincli/opentui-core" ]; then
+    : # good — @xincli fork via override
+  else
+    echo "Warning: @opentui/core is $CORE_NAME (expected @xincli/opentui-core)" >&2
   fi
+else
+  echo "Warning: @opentui/core not found in any node_modules" >&2
 fi
 
-# Check 3: is the native .so installed?
+# Check: native .so (root optionalDependency — should be a symlink in root node_modules)
 SO_PATH="$OPENCODE_ROOT/node_modules/@xincli/opentui-core-android-arm64/libopentui.so"
-if [ -f "$SO_PATH" ]; then
-  :
-else
-  echo "Warning: @xincli/opentui-core-android-arm64/libopentui.so not found." >&2
-  echo "  Run: bash $SCRIPT_DIR/apply-termux-patches.sh && bun install" >&2
-  echo "  (warning only — opencode will crash at startup if .so is missing)" >&2
+if [ ! -f "$SO_PATH" ]; then
+  echo "Warning: libopentui.so not found at $SO_PATH" >&2
 fi
 
-# Check 4: verify @ff-labs/fff-bun is either installed OR fff.bun.ts is patched
-# @ff-labs/fff-bun has "os": ["darwin","linux","win32"] — Bun skips it on Android.
-# Patch 1f modifies fff.bun.ts to use try/catch require() so the missing package
-# doesn't crash at import time. So either the package is installed (unlikely on
-# Termux) OR the source is patched (expected on Termux).
-FFF_PATH="$OPENCODE_ROOT/node_modules/@ff-labs/fff-bun/package.json"
+# Check: fff.bun.ts patched (handles missing @ff-labs/fff-bun on Termux)
 FFF_TS="$OPENCODE_ROOT/packages/core/src/filesystem/fff.bun.ts"
-FFF_TS_PATCHED=$(grep -q "opencode-bionic-patched" "$FFF_TS" 2>/dev/null && echo "YES" || echo "NO")
-
-if [ -f "$FFF_PATH" ]; then
-  : # package installed — normal flow
-elif [ "$FFF_TS_PATCHED" = "YES" ]; then
-  : # package not installed but source is patched — will fall back to ripgrep
-else
-  echo "" >&2
-  echo "ERROR: @ff-labs/fff-bun is NOT in node_modules AND fff.bun.ts is NOT patched." >&2
-  echo "  On Termux, @ff-labs/fff-bun is skipped by Bun (os restriction)." >&2
-  echo "  Patch 1f in apply-termux-patches.sh handles this by lazy-loading the import." >&2
-  echo "" >&2
-  echo "  FIX — run:" >&2
-  echo "    bash termux/apply-termux-patches.sh" >&2
-  echo "    bash termux/run-opencode-termux.sh" >&2
-  echo "" >&2
-  exit 1
+if ! grep -q "opencode-bionic-patched" "$FFF_TS" 2>/dev/null; then
+  echo "Warning: fff.bun.ts not patched. Run: bash termux/apply-termux-patches.sh" >&2
 fi
 
-# Check 5: verify other critical packages that opencode imports at startup
-# These are packages whose absence causes immediate "Cannot find module" errors.
-CRITICAL_PACKAGES=(
-  "@opentui/solid"
-  "@opentui/keymap"
-  "solid-js"
-  "effect"
-  "yargs"
-  "zod"
-)
-MISSING_PACKAGES=()
+# Check: critical packages (informational only — do NOT hard-fail)
+CRITICAL_PACKAGES=("@opentui/solid" "@opentui/keymap" "solid-js" "effect" "yargs" "zod")
+MISSING=()
 for pkg in "${CRITICAL_PACKAGES[@]}"; do
-  if [ ! -f "$OPENCODE_ROOT/node_modules/$pkg/package.json" ]; then
-    MISSING_PACKAGES+=("$pkg")
+  if ! find_pkg "$pkg" >/dev/null 2>&1; then
+    MISSING+=("$pkg")
   fi
 done
 
-if [ ${#MISSING_PACKAGES[@]} -gt 0 ]; then
-  echo "" >&2
-  echo "ERROR: Critical packages missing from node_modules:" >&2
-  for p in "${MISSING_PACKAGES[@]}"; do
-    echo "  - $p" >&2
-  done
-  echo "" >&2
-  echo "  This is likely a stale lockfile issue. Run:" >&2
-  echo "    cd $OPENCODE_ROOT && rm -rf node_modules bun.lock && bun install" >&2
-  echo "" >&2
-  exit 1
+if [ ${#MISSING[@]} -gt 0 ]; then
+  echo "Warning: some packages not found in root or workspace node_modules:" >&2
+  for p in "${MISSING[@]}"; do echo "  - $p" >&2; done
+  echo "  (This may be OK — Bun's module resolution walks up the directory tree." >&2
+  echo "   If opencode fails with 'Cannot find module', run: bash termux/clean-reinstall.sh)" >&2
 fi
 
 # --- Exec opencode -----------------------------------------------------------
@@ -285,7 +254,6 @@ cd "$OPENCODE_ROOT"
 
 # opencode's dev script:
 #   bun run --cwd packages/opencode --conditions=browser src/index.ts
-# We replicate it here so the user has full control over args.
 exec "$BUN_BIN" run \
   --cwd packages/opencode \
   --conditions=browser \
