@@ -104,10 +104,15 @@ echo "=== Step 3: Run bun install ==="
 echo "  (this will take 2-5 minutes on first install — 4000+ packages)"
 echo ""
 
-if "$BUN_BIN" install 2>&1 | tee /tmp/bun-install.log; then
+# NOTE: Do NOT pipe through `tee` — on Termux /tmp may not exist, and with
+# `set -o pipefail` a tee failure would mask a successful bun install.
+# Just run bun install directly; output goes to stdout.
+"$BUN_BIN" install
+INSTALL_EXIT=$?
+
+if [ "$INSTALL_EXIT" -eq 0 ]; then
   ok "bun install completed"
 else
-  INSTALL_EXIT=$?
   fail "bun install failed (exit $INSTALL_EXIT)"
 fi
 
