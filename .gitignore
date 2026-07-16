@@ -1,0 +1,50 @@
+.DS_Store
+node_modules
+.worktrees
+.sst
+.env
+.env.local
+.idea
+.vscode
+.codex
+*~
+playground
+tmp
+dist
+ts-dist
+.turbo
+**/.serena
+.serena/
+**/.omo
+.omo/
+/result
+refs
+Session.vim
+/opencode.json
+a.out
+target
+.scripts
+.direnv/
+
+# Local dev files
+opencode-dev
+UPCOMING_CHANGELOG.md
+logs/
+*.bun-build
+tsconfig.tsbuildinfo
+
+# Large marketing assets (not needed for Termux TUI port)
+packages/console/app/src/asset/lander/
+packages/web/src/content/docs/
+
+# Storybook (not needed for Termux)
+packages/storybook/
+
+# Desktop app (Electron, not for Android)
+packages/desktop/
+
+# Stats app (web dashboard, not for Android)
+packages/stats/
+
+# Screenshot examples
+screenshot-*.png

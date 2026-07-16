@@ -1,0 +1,473 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# =============================================================================
+# apply-termux-patches.sh — Patches opencode for Android/Termux (Bun runtime)
+# =============================================================================
+#
+# WHAT THIS DOES:
+#   Patches the opencode package.json (and a few source files) so it runs on
+#   Termux under the patched bun-termux binary with @xincli/opentui-core
+#   native binding.
+#
+# STRATEGY (root-cause first, no bandaids):
+#
+#   The key insight: the user's @xincli/opentui-core@0.4.8 npm package
+#   ALREADY has Termux detection baked in (the resolveNativePackage() function
+#   in the compiled index.js checks for process.platform === "android" OR
+#   (linux + $PREFIX contains "com.termux"), and loads
+#   @xincli/opentui-core-android-arm64). So we don't need to patch source —
+#   we just need to make opencode USE @xincli/opentui-core instead of
+#   @opentui/core.
+#
+#   1. (Core) Add npm alias override in root package.json:
+#        overrides["@opentui/core"] = "npm:@xincli/opentui-core@0.4.8"
+#      Root cause: opencode pins @opentui/core@0.4.3 in its catalog. Upstream
+#      @opentui/core has no Android branch in resolveNativePackage(). On
+#      Termux it throws "opentui is not supported on the current platform".
+#      The @xincli fork (0.4.8) fixes this. The override forces ALL
+#      @opentui/core resolutions in the workspace to use the @xincli fork,
+#      including the peer-dep resolution from @opentui/solid@0.4.3 and
+#      @opentui/keymap@0.4.3.
+#
+#   2. (Native binary) Add @xincli/opentui-core-android-arm64@0.4.8 as
+#      optionalDependency so it gets installed on aarch64-Termux:
+#        optionalDependencies["@xincli/opentui-core-android-arm64"] = "0.4.8"
+#      Root cause: @xincli/opentui-core@0.4.8's compiled resolveNativePackage()
+#      does `await import("@xincli/opentui-core-android-arm64")`. If that
+#      package isn't installed, it falls through to the dev-mode prebuilt
+#      path (which doesn't exist in an npm install), then throws. The
+#      optionalDependency ensures it's fetched.
+#
+#   3. (Catalog) Update the catalog version pin too, so workspace packages
+#      that reference "catalog:" for @opentui/core also resolve to 0.4.8.
+#      Root cause: opencode uses Bun's catalog feature for centralized
+#      version pinning. The override alone doesn't update the catalog —
+#      workspace packages that say "@opentui/core": "catalog:" would still
+#      try to install 0.4.3 (which then gets overridden to @xincli). Updating
+#      the catalog to 0.4.8 is cleaner.
+#
+#   4. (Soft failures — no patch needed, just documented):
+#      - @parcel/watcher: no Bionic binary → opencode's watcher.ts catches
+#        the require error and degrades to no file watching. Acceptable.
+#      - @ff-labs/fff-bun: no Bionic binary → opencode's search.ts catches
+#        FileFinder.isAvailable()=false and degrades to ripgrep. Acceptable.
+#      - @lydell/node-pty: not loaded under Bun (the #pty import's "bun"
+#        condition loads bun-pty instead). No issue.
+#
+#   5. (Runtime checks, no source patch):
+#      - Verify LD_PRELOAD shim is active (else FFI SIGABRTs from MTE)
+#      - Verify MEMTAG_OPTIONS=off (else scudo tags heap pointers, FFI
+#        passes tagged pointers to free(), SIGABRT)
+#      - Verify clipboard tool exists (else clipboard features silently no-op)
+#
+# ROBUSTNESS RULES (same as bun-termux/apply-android-patches.sh):
+#   - Idempotent: detect existing patches via markers, safe to re-run
+#   - Verify EVERY patch applied; abort on failure
+#   - Print [OK]/[SKIP]/[FAIL] markers for greppable CI logs
+#   - JSON edits via python3 (json module), not sed — survives reformatting
+#
+# PREREQUISITES:
+#   - bun-termux installed (provides `bun` and `bunx` with LD_PRELOAD shim)
+#     -> curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
+#   - opencode cloned and `bun install` already run successfully
+#
+# USAGE:
+#   cd /path/to/opencode
+#   bash /path/to/apply-termux-patches.sh
+#
+# AFTER PATCHING:
+#   Run `bun install` again to pick up the new override + optionalDependency.
+#   Then run opencode via run-opencode-termux.sh.
+#
+# =============================================================================
+
+set -euo pipefail
+
+# --- Config ------------------------------------------------------------------
+XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.8}"
+XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.8}"
+PATCH_MARKER="opencode-bionic-patched"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+MUTED='\033[0;2m'
+NC='\033[0m'
+
+ok()    { echo -e "  ${GREEN}[OK]${NC}   $*"; }
+skip()  { echo -e "  ${BLUE}[SKIP]${NC} $*"; }
+fail()  { echo -e "  ${RED}[FAIL]${NC} $*"; FAIL_COUNT=$((FAIL_COUNT + 1)); }
+warn()  { echo -e "  ${YELLOW}[WARN]${NC} $*"; WARN_COUNT=$((WARN_COUNT + 1)); }
+info()  { echo -e "  ${MUTED}       $*${NC}"; }
+
+FAIL_COUNT=0
+WARN_COUNT=0
+
+# --- Locate the opencode root ------------------------------------------------
+OPENCODE_ROOT="${OPENCODE_ROOT:-$(pwd)}"
+if [ ! -f "$OPENCODE_ROOT/package.json" ] || ! grep -q '"name": "opencode"' "$OPENCODE_ROOT/package.json" 2>/dev/null; then
+  echo -e "${RED}Error: not inside opencode root.${NC}"
+  echo -e "  Expected $OPENCODE_ROOT/package.json with \"name\": \"opencode\"."
+  echo -e "  Run from the opencode root, or set OPENCODE_ROOT=/path/to/opencode"
+  exit 1
+fi
+
+cd "$OPENCODE_ROOT"
+
+echo "=========================================="
+echo "Applying Termux patches to opencode"
+echo "Source: $OPENCODE_ROOT"
+echo "Marker: $PATCH_MARKER"
+echo "@xincli/opentui-core: $XINCLI_CORE_VERSION"
+echo "@xincli/opentui-core-android-arm64: $XINCLI_ANDROID_VERSION"
+echo "=========================================="
+
+# --- Termux detection (for runtime checks) -----------------------------------
+is_termux() {
+  [ -n "${PREFIX:-}" ] && case "$PREFIX" in *com.termux*) return 0;; esac
+  return 1
+}
+
+if ! is_termux; then
+  echo -e "${YELLOW}Note: PREFIX does not look like Termux ($PREFIX).${NC}"
+  echo -e "${MUTED}Patches will still apply (detection is runtime, not patch-time).${NC}"
+fi
+
+# --- Helper: verify a JSON key exists ----------------------------------------
+verify_json_key() {
+  local file="$1"
+  local python_expr="$2"  # e.g. 'pkg["overrides"]["@opentui/core"]'
+  local expected="$3"
+  python3 -c "
+import json, sys
+with open('$file') as f: pkg = json.load(f)
+try:
+    actual = $python_expr
+    if actual == '$expected':
+        print('OK')
+    else:
+        print(f'GOT:{actual}')
+        sys.exit(1)
+except (KeyError, TypeError):
+    print('MISSING')
+    sys.exit(1)
+" 2>/dev/null
+}
+
+# =============================================================================
+# PATCH 1: Root package.json — npm alias override + optionalDependency
+# =============================================================================
+#
+# Root cause:
+#   opencode pins @opentui/core@0.4.3 in its catalog. Upstream 0.4.3's
+#   resolveNativePackage() has no Android branch — on Termux (Bun normalizes
+#   android→linux, so process.platform==="linux" but libc is Bionic) it
+#   throws "opentui is not supported on the current platform: linux-arm64".
+#
+# Fix:
+#   Use Bun's `overrides` field to alias @opentui/core → @xincli/opentui-core.
+#   The @xincli fork (0.4.8) already has Termux detection baked into its
+#   compiled resolveNativePackage() — it checks process.platform==="android"
+#   OR (linux + $PREFIX contains "com.termux") and loads
+#   @xincli/opentui-core-android-arm64. No source patching needed.
+#
+#   The override forces ALL @opentui/core resolutions in the workspace to
+#   use the @xincli fork, including peer-dep resolutions from:
+#     - @opentui/solid@0.4.3 (used by opencode tui)
+#     - @opentui/keymap@0.4.3 (used by opencode tui)
+#     - opentui-spinner (used by opencode tui)
+#
+#   We also add @xincli/opentui-core-android-arm64@0.4.8 as an
+#   optionalDependency so `bun install` fetches the .so on aarch64.
+#
+# Compatibility note:
+#   @xincli/opentui-core@0.4.8 ships compiled JS (main: index.js) from
+#   opentui 0.4.8 source. opencode pins @opentui/core@0.4.3. The TS bindings
+#   API between 0.4.3 and 0.4.8 should be compatible (same 0.4.x minor).
+#   If a breaking change was introduced, @opentui/solid@0.4.3 (which expects
+#   0.4.3 API) might fail at runtime. In that case, downgrade to
+#   @xincli/opentui-core@0.4.7 or rebuild @xincli/opentui-core from 0.4.3
+#   source.
+# =============================================================================
+
+echo ""
+echo "=== Patch 1: Root package.json — npm alias override ==="
+
+ROOT_PKG_JSON="$OPENCODE_ROOT/package.json"
+
+# Idempotency: check if override already present with correct version
+CURRENT_OVERRIDE=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}" 2>/dev/null || echo "MISSING")
+
+if [ "$CURRENT_OVERRIDE" = "OK" ]; then
+  skip "overrides[@opentui/core] already = npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
+else
+  info "patching: $ROOT_PKG_JSON"
+  info "  current value: ${CURRENT_OVERRIDE:-<none>}"
+
+  python3 <<PYEOF
+import json, sys
+
+with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
+    pkg = json.load(f)
+
+# Add the npm alias override
+overrides = pkg.setdefault("overrides", {})
+overrides["@opentui/core"] = "npm:@xincli/opentui-core@$XINCLI_CORE_VERSION"
+
+# Also override the catalog entry so workspace packages that say
+# "@opentui/core": "catalog:" resolve to 0.4.8 (then the override maps
+# that to @xincli). Without this, bun install would still try to fetch
+# @opentui/core@0.4.3 first, then override it — wasteful but works.
+catalog = pkg.get("workspaces", {}).get("catalog", {})
+if "@opentui/core" in catalog:
+    old_ver = catalog["@opentui/core"]
+    catalog["@opentui/core"] = "$XINCLI_CORE_VERSION"
+    print(f"    [1a] catalog['@opentui/core']: {old_ver} -> $XINCLI_CORE_VERSION")
+
+# Add @xincli/opentui-core-android-arm64 as optionalDependency
+opts = pkg.setdefault("optionalDependencies", {})
+old = opts.get("@xincli/opentui-core-android-arm64", "<none>")
+opts["@xincli/opentui-core-android-arm64"] = "$XINCLI_ANDROID_VERSION"
+print(f"    [1b] optionalDependencies['@xincli/opentui-core-android-arm64']: {old} -> $XINCLI_ANDROID_VERSION")
+
+# Mark the package.json as patched (in a way that survives JSON re-serialization)
+# We use a comment-like field in a custom key.
+pkg["_opencodeBionic"] = {
+    "patched": True,
+    "version": "$XINCLI_CORE_VERSION",
+    "marker": "$PATCH_MARKER",
+    "note": "Patched by apply-termux-patches.sh for Termux/Android. Safe to remove this key."
+}
+
+with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
+    json.dump(pkg, f, indent=2, ensure_ascii=False)
+    f.write("\n")
+
+print(f"    [1c] overrides['@opentui/core'] = npm:@xincli/opentui-core@$XINCLI_CORE_VERSION")
+print(f"    [1d] marker _opencodeBionic added")
+PYEOF
+
+  # Verify
+  V1=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}")
+  V2=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["optionalDependencies"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
+  V3=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["_opencodeBionic"]["marker"]' "${PATCH_MARKER}")
+
+  [ "$V1" = "OK" ] && ok "overrides[@opentui/core] verified" || fail "overrides[@opentui/core] NOT verified (got: $V1)"
+  [ "$V2" = "OK" ] && ok "optionalDependencies[@xincli/opentui-core-android-arm64] verified" || fail "optionalDependency NOT verified (got: $V2)"
+  [ "$V3" = "OK" ] && ok "marker _opencodeBionic verified" || fail "marker NOT verified (got: $V3)"
+fi
+
+# =============================================================================
+# PATCH 2: Verify @opentui/solid and @opentui/keymap still work with override
+# =============================================================================
+#
+# Root cause:
+#   @opentui/solid@0.4.3 and @opentui/keymap@0.4.3 declare @opentui/core as a
+#   peer dependency. With our override, they'll get @xincli/opentui-core@0.4.8
+#   instead. The API between 0.4.3 and 0.4.8 should be compatible, but if
+#   @opentui/solid imports a symbol that was renamed/removed in 0.4.8, it'll
+#   crash at import time.
+#
+# Fix:
+#   No preemptive patch. Run `bun install` after this script — if there's a
+#   peer-dep conflict, Bun will warn. If there's an import error at runtime,
+#   it'll be a clear "Cannot find export X in @xincli/opentui-core" message.
+#   At that point we can either:
+#     (a) pin @xincli/opentui-core to a lower version (0.4.7, 0.4.6)
+#     (b) override @opentui/solid and @opentui/keymap to higher versions
+#         (but only if @xincli publishes them — currently they don't)
+#     (c) fork @opentui/solid and @opentui/keymap, rebuild against 0.4.8
+# =============================================================================
+
+echo ""
+echo "=== Patch 2: Verify @opentui/solid + @opentui/keymap compatibility ==="
+
+# Check what versions opencode pins for solid/keymap
+SOLID_VER=$(python3 -c "import json; pkg=json.load(open('$ROOT_PKG_JSON')); print(pkg.get('workspaces',{}).get('catalog',{}).get('@opentui/solid','?'))")
+KEYMAP_VER=$(python3 -c "import json; pkg=json.load(open('$ROOT_PKG_JSON')); print(pkg.get('workspaces',{}).get('catalog',{}).get('@opentui/keymap','?'))")
+info "@opentui/solid catalog pin: $SOLID_VER"
+info "@opentui/keymap catalog pin: $KEYMAP_VER"
+
+# These will be resolved after `bun install`. If the @xincli/opentui-core@0.4.8
+# has API breaks vs 0.4.3, the import will fail. We can't check this statically
+# without running bun install — just warn.
+if [ "$SOLID_VER" = "0.4.3" ] && [ "$XINCLI_CORE_VERSION" = "0.4.8" ]; then
+  warn "@opentui/solid@0.4.3 will get @xincli/opentui-core@0.4.8 via override"
+  info "If solid/keymap import errors appear at runtime, set XINCLI_CORE_VERSION=0.4.7"
+  info "and re-run this script, then 'bun install' again."
+else
+  ok "version combinations look reasonable"
+fi
+
+# =============================================================================
+# PATCH 3: @ff-labs/fff-bun — short-circuit isAvailable() on Termux (optional)
+# =============================================================================
+#
+# Root cause:
+#   fff-bun resolves its native lib via require("@ff-labs/fff-bin-linux-<arch>-<gnu|musl>/...")
+#   On Termux (Bionic libc) neither glibc nor musl variant loads. The require
+#   throws, opencode's filesystem/search.ts catches it and falls back to
+#   ripgrep. So functionally OK — but stderr gets a noisy stack trace.
+#
+# Fix:
+#   OPTIONAL. Skip unless --with-fff-fix is passed. opencode already
+#   handles the failure gracefully.
+# =============================================================================
+
+echo ""
+echo "=== Patch 3: @ff-labs/fff-bun (optional, --with-fff-fix to enable) ==="
+
+if [ "${1:-}" != "--with-fff-fix" ]; then
+  skip "fff-bun patch skipped (opencode degrades to ripgrep gracefully). Pass --with-fff-fix to enable."
+else
+  FFF_DIR="$OPENCODE_ROOT/node_modules/@ff-labs/fff-bun"
+  if [ ! -d "$FFF_DIR" ]; then
+    skip "@ff-labs/fff-bun not in node_modules (already optional?)"
+  else
+    info "found @ff-labs/fff-bun at: $FFF_DIR"
+    FFF_FILE=""
+    for c in "$FFF_DIR/src/download.ts" "$FFF_DIR/src/platform.ts" "$FFF_DIR/index.js" "$FFF_DIR/index.ts"; do
+      if [ -f "$c" ] && grep -qE "fff-bin-linux|@ff-labs/fff-bin-" "$c" 2>/dev/null; then
+        FFF_FILE="$c"
+        break
+      fi
+    done
+    if [ -z "$FFF_FILE" ]; then
+      warn "could not find the fff native require site; skipping"
+    elif grep -q "$PATCH_MARKER" "$FFF_FILE" 2>/dev/null; then
+      skip "$FFF_FILE already patched"
+    else
+      python3 <<PYEOF
+import os, re, sys
+fff_file = "$FFF_FILE"
+with open(fff_file, "r", encoding="utf-8") as f:
+    content = f.read()
+marker = "$PATCH_MARKER"
+new_content = content
+if "function binaryExists" in content:
+    new_content, n = re.subn(
+        r'(function binaryExists\s*\(\s*\)\s*:\s*boolean\s*\{)',
+        r'''\1
+  // ''' + marker + ''' [Patch 3]: Termux has no fff native variant — short-circuit.
+  if (typeof process.env.PREFIX === "string" && process.env.PREFIX.includes("com.termux")) {
+    return false;
+  }''',
+        content, count=1)
+    if n == 1:
+        with open(fff_file, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print("    [1] Patched binaryExists() with Termux short-circuit")
+    else:
+        print("    [FAIL] could not patch binaryExists()", file=sys.stderr)
+        sys.exit(1)
+else:
+    print("    [SKIP] no binaryExists() function found (fff layout differs)", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+      if grep -q "$PATCH_MARKER" "$FFF_FILE" 2>/dev/null; then
+        ok "$FFF_FILE patched"
+      else
+        fail "$FFF_FILE patch verification failed"
+      fi
+    fi
+  fi
+fi
+
+# =============================================================================
+# PATCH 4: clipboard runtime check (no source patch)
+# =============================================================================
+#
+# Root cause:
+#   opencode's tui imports clipboardy for clipboard operations. clipboardy
+#   shells out to `pbcopy`/`xclip`/`powershell`. None exist on Termux.
+#   This is a soft failure — clipboard just won't work, no crash.
+#
+# Fix:
+#   No source patch. User can `pkg install termux-api` and symlink
+#   `termux-clipboard-set` → `xclip` for clipboard support.
+# =============================================================================
+
+echo ""
+echo "=== Patch 4: clipboard (runtime check only, no source patch) ==="
+
+if command -v termux-clipboard-set >/dev/null 2>&1; then
+  ok "termux-clipboard-set found"
+elif command -v xclip >/dev/null 2>&1; then
+  ok "xclip found (clipboardy will use it)"
+else
+  warn "no clipboard tool found. Install termux-api: pkg install termux-api"
+  info "or symlink: ln -s \$PREFIX/bin/termux-clipboard-set \$PREFIX/bin/xclip"
+  info "clipboard features will silently no-op without this"
+fi
+
+# =============================================================================
+# PATCH 5: Verify bun-termux LD_PRELOAD shim is active
+# =============================================================================
+#
+# Root cause:
+#   The user's bun-termux launchers ($PREFIX/bin/bun, $PREFIX/bin/bunx) set
+#   LD_PRELOAD=libbun-android-fix.so and MEMTAG_OPTIONS=off before exec'ing
+#   the patched bun binary. If the user invokes bun directly (bypassing the
+#   launcher) OR runs opencode via a wrapper that resets env, the shim is
+#   missing and bun's FFI will crash with SIGABRT (MTE heap tagging).
+#
+# Fix:
+#   Verify the shim is loaded. Warn (don't fail) if missing.
+# =============================================================================
+
+echo ""
+echo "=== Patch 5: Verify bun-termux LD_PRELOAD shim ==="
+
+SHIM_PATH="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
+if [ -f "$SHIM_PATH" ]; then
+  ok "shim exists: $SHIM_PATH"
+  if [ -n "${LD_PRELOAD:-}" ] && case "$LD_PRELOAD" in *libbun-android-fix.so*) true;; *) false;; esac; then
+    ok "LD_PRELOAD contains libbun-android-fix.so"
+  else
+    warn "LD_PRELOAD does NOT contain libbun-android-fix.so"
+    info "Make sure you invoke opencode via the bun-termux launcher:"
+    info "  $PREFIX/bin/bun run packages/opencode/src/index.ts"
+    info "NOT via /data/data/com.termux/files/usr/lib/bun-termux/bun directly"
+  fi
+  if [ "${MEMTAG_OPTIONS:-}" = "off" ]; then
+    ok "MEMTAG_OPTIONS=off (MTE disabled)"
+  else
+    warn "MEMTAG_OPTIONS is not 'off' — FFI may SIGABRT"
+  fi
+else
+  warn "bun-termux shim not found at $SHIM_PATH"
+  info "Install bun-termux: curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash"
+fi
+
+# =============================================================================
+# SUMMARY
+# =============================================================================
+
+echo ""
+echo "=========================================="
+echo "Summary"
+echo "=========================================="
+echo -e "  ${GREEN}OK:${NC}   patches verified"
+echo -e "  ${YELLOW}WARN:${NC} $WARN_COUNT warnings"
+echo -e "  ${RED}FAIL:${NC} $FAIL_COUNT failures"
+
+if [ "$FAIL_COUNT" -gt 0 ]; then
+  echo ""
+  echo -e "${RED}Some patches failed. opencode may not start.${NC}"
+  echo "Fix the failures above and re-run this script (it's idempotent)."
+  exit 1
+fi
+
+echo ""
+echo "Next steps:"
+echo "  1. Run 'bun install' to pick up the new override + optionalDependency:"
+echo "       bun install"
+echo "  2. Verify @xincli packages are in node_modules:"
+echo "       ls node_modules/@xincli/"
+echo "       ls node_modules/@opentui/core/  # should be a symlink/replacement to @xincli"
+echo "  3. Run opencode:"
+echo "       bash $(dirname "$0")/run-opencode-termux.sh"
+echo ""
+echo "Or run directly:"
+echo "  bun run --cwd packages/opencode --conditions=browser src/index.ts"
