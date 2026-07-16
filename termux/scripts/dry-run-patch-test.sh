@@ -90,7 +90,7 @@ print("    [1b] Added @xincli packages to minimumReleaseAgeExcludes")
 PYEOF
 
 echo ""
-echo "=== Patch 1c: package.json — remove tree-sitter-* from trustedDependencies ==="
+echo "=== Patch 1c: package.json — remove ALL entries from trustedDependencies ==="
 python3 <<PYEOF
 import json, sys
 
@@ -98,18 +98,15 @@ with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
     pkg = json.load(f)
 
 td = pkg.get("trustedDependencies", [])
-remove_set = {"tree-sitter", "tree-sitter-bash", "tree-sitter-powershell", "web-tree-sitter"}
 before = len(td)
-td_filtered = [x for x in td if x not in remove_set]
-removed = before - len(td_filtered)
-pkg["trustedDependencies"] = td_filtered
+pkg["trustedDependencies"] = []
 
 with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
     json.dump(pkg, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
-print(f"    [1c] Removed {removed} tree-sitter entries from trustedDependencies")
-print(f"    Remaining: {td_filtered}")
+print(f"    [1c] Removed all {before} entries from trustedDependencies")
+print(f"    (was: {td})")
 PYEOF
 
 echo ""
@@ -150,15 +147,10 @@ if m:
 else:
     checks.append(("bunfig minimumReleaseAgeExcludes found", False, True))
 
-# Patch 1c checks — trustedDependencies
+# Patch 1c checks — trustedDependencies should be EMPTY
 td = pkg.get("trustedDependencies", [])
-ts_remaining = [x for x in td if x in {"tree-sitter", "tree-sitter-bash", "tree-sitter-powershell", "web-tree-sitter"}]
-checks.append(("tree-sitter-* removed from trustedDependencies",
-               ts_remaining, []))
-checks.append(("trustedDependencies still has esbuild",
-               "esbuild" in td, True))
-checks.append(("trustedDependencies still has node-pty",
-               "node-pty" in td, True))
+checks.append(("trustedDependencies is empty (all install scripts skipped)",
+               td, []))
 
 # Existing fields intact
 checks.append(("name", pkg.get("name"), "opencode"))

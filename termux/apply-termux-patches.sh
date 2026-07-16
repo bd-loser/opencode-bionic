@@ -346,62 +346,80 @@ PYEOF
 fi
 
 # =============================================================================
-# PATCH 1c: package.json — remove tree-sitter-* from trustedDependencies
+# PATCH 1c: package.json — remove ALL entries from trustedDependencies
 # =============================================================================
 #
 # Root cause:
 #   opencode's package.json has `trustedDependencies` listing packages whose
-#   install scripts (postinstall) are allowed to run. This includes:
-#     - "tree-sitter"
-#     - "tree-sitter-bash"
-#     - "tree-sitter-powershell"
-#     - "web-tree-sitter"
+#   install scripts (postinstall, install) are allowed to run:
+#     - esbuild
+#     - node-pty
+#     - protobufjs
+#     - tree-sitter
+#     - tree-sitter-bash
+#     - tree-sitter-powershell
+#     - web-tree-sitter
+#     - electron
 #
-#   tree-sitter-powershell's install script runs `node-gyp-build` which loads
-#   a native N-API binary. On Termux with MTE (Memory Tagging Extension),
-#   this crashes with:
+#   On Termux with MTE (Memory Tagging Extension), ANY install script that
+#   loads a native N-API module crashes with:
 #     Pointer tag for 0x... was truncated
-#     error: install script from "tree-sitter-powershell" terminated by SIGABRT
+#     error: install script from "<package>" terminated by SIGABRT
 #
-#   The MTE fix shim (libbun-mte-fix.so) is supposed to handle this by
-#   stripping tags from malloc's return values, but it doesn't catch all
-#   cases — specifically, N-API's native module loading path uses a different
-#   code path that bypasses the shim.
+#   This is because N-API's native module loading path bypasses the MTE fix
+#   shim (libbun-mte-fix.so). The shim intercepts malloc/free, but N-API
+#   uses dlopen+dlsym which gets tagged pointers directly from Bionic's
+#   scudo allocator.
+#
+#   We initially tried removing only tree-sitter-* (Patch 1c v1), but the
+#   next `bun install` crashed on protobufjs instead. Then node-pty would
+#   crash next. This is whack-a-mole — ANY package with a native install
+#   script will crash.
 #
 # Fix:
-#   Remove tree-sitter, tree-sitter-bash, tree-sitter-powershell, and
-#   web-tree-sitter from trustedDependencies. This makes Bun skip their
-#   install scripts. The packages themselves still install (their .wasm files,
-#   .js files, etc.) — only the native compilation/loading is skipped.
+#   Remove ALL entries from trustedDependencies. This makes Bun skip ALL
+#   dependency install scripts (effectively `--ignore-scripts` for deps).
+#   The packages themselves still install (their .js, .wasm, .d.ts files) —
+#   only the native compilation/loading scripts are skipped.
 #
-#   opencode only uses the .wasm files from tree-sitter-bash and
-#   tree-sitter-powershell (via web-tree-sitter's WASM runtime). It does NOT
-#   use the native N-API bindings. So skipping the install scripts is safe —
-#   opencode's shell tool (which parses bash/powershell ASTs) will work fine
-#   using the WASM files.
+# Why this is safe for opencode's dev/runtime flow:
+#   - esbuild: opencode uses Bun.build() (Bun's built-in bundler), NOT the
+#     esbuild CLI. The esbuild binary isn't needed for `bun run src/index.ts`.
+#     Only needed for `bun run build` (production binary compilation).
+#   - node-pty: NOT used under Bun. opencode's #pty import resolves to
+#     bun-pty under the "bun" condition. node-pty is only used under Node.
+#   - protobufjs: has a pure JS fallback. The native bindings are optional
+#     (used for performance, not correctness).
+#   - tree-sitter-*: opencode only uses the .wasm files via web-tree-sitter's
+#     WASM runtime. The native N-API bindings are not imported.
+#   - web-tree-sitter: same — opencode uses the WASM runtime, not native.
+#   - electron: not relevant for Termux (no Electron apps on Android).
 #
-#   If a future opencode feature needs the native tree-sitter bindings, we'd
-#   need a different fix (e.g. patching node-gyp-build to handle MTE, or
-#   cross-compiling the native bindings for Bionic).
+#   The root-level postinstall script (`bun run --cwd packages/core fix-node-pty`)
+#   still runs (trustedDependencies only affects dependencies, not root scripts).
+#   fix-node-pty just chmods spawn-helper — harmless if node-pty's install
+#   script was skipped (the file won't exist, the script handles that case).
+#
+#   If you later need a production build (`bun run build`), you may need to
+#   temporarily re-add esbuild to trustedDependencies and run `bun install`
+#   on a non-Termux machine, or use `bun install --ignore-scripts=false` with
+#   a per-package override. But for dev/runtime on Termux, this is correct.
 # =============================================================================
 
 echo ""
-echo "=== Patch 1c: package.json — remove tree-sitter-* from trustedDependencies ==="
+echo "=== Patch 1c: package.json — remove ALL entries from trustedDependencies ==="
 
-# Check current state — list which tree-sitter entries are present
-CURRENT_TS=$(python3 -c "
+# Check current state
+CURRENT_TD_COUNT=$(python3 -c "
 import json
 with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
-td = pkg.get('trustedDependencies', [])
-remove_set = {'tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell', 'web-tree-sitter'}
-ts_in = [x for x in td if x in remove_set]
-print(','.join(ts_in) if ts_in else 'NONE')
+print(len(pkg.get('trustedDependencies', [])))
 " 2>/dev/null)
 
-if [ "$CURRENT_TS" = "NONE" ]; then
-  skip "tree-sitter-* already removed from trustedDependencies"
+if [ "$CURRENT_TD_COUNT" = "0" ]; then
+  skip "trustedDependencies already empty"
 else
-  info "current tree-sitter entries in trustedDependencies: $CURRENT_TS"
+  info "current trustedDependencies has $CURRENT_TD_COUNT entries"
 
   python3 <<PYEOF
 import json, sys
@@ -410,34 +428,29 @@ with open("$ROOT_PKG_JSON", "r", encoding="utf-8") as f:
     pkg = json.load(f)
 
 td = pkg.get("trustedDependencies", [])
-remove_set = {"tree-sitter", "tree-sitter-bash", "tree-sitter-powershell", "web-tree-sitter"}
 before = len(td)
-td_filtered = [x for x in td if x not in remove_set]
-removed = before - len(td_filtered)
-pkg["trustedDependencies"] = td_filtered
+pkg["trustedDependencies"] = []
 
 with open("$ROOT_PKG_JSON", "w", encoding="utf-8") as f:
     json.dump(pkg, f, indent=2, ensure_ascii=False)
     f.write("\n")
 
-print(f"    [1c] Removed {removed} tree-sitter entries from trustedDependencies")
-print(f"    Remaining trustedDependencies: {td_filtered}")
+print(f"    [1c] Removed all {before} entries from trustedDependencies")
+print(f"    (was: {td})")
+print(f"    All dependency install scripts will be skipped by Bun")
 PYEOF
 
   # Verify
-  AFTER_TS=$(python3 -c "
+  AFTER_TD_COUNT=$(python3 -c "
 import json
 with open('$ROOT_PKG_JSON') as f: pkg = json.load(f)
-td = pkg.get('trustedDependencies', [])
-remove_set = {'tree-sitter', 'tree-sitter-bash', 'tree-sitter-powershell', 'web-tree-sitter'}
-ts_in = [x for x in td if x in remove_set]
-print(','.join(ts_in) if ts_in else 'NONE')
+print(len(pkg.get('trustedDependencies', [])))
 " 2>/dev/null)
 
-  if [ "$AFTER_TS" = "NONE" ]; then
-    ok "tree-sitter-* removed from trustedDependencies"
+  if [ "$AFTER_TD_COUNT" = "0" ]; then
+    ok "trustedDependencies is now empty — all install scripts skipped"
   else
-    fail "tree-sitter-* still in trustedDependencies: $AFTER_TS"
+    fail "trustedDependencies still has $AFTER_TD_COUNT entries"
   fi
 fi
 

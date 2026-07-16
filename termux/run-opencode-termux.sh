@@ -89,32 +89,31 @@ fi
 # raw binary, the shims won't be loaded and FFI will SIGABRT (MTE pointer
 # truncation) or SELinux will block directory walks.
 #
-# We detect this by checking if $BUN_BIN starts with the shebang
-# "#!/data/data/com.termux/files/usr/bin/bash" (launcher) vs "#!/bin/sh" or
-# being an ELF binary (raw bun).
+# Detection: use `file` to check if BUN_BIN is an ELF binary (raw) or not
+# (script/text = launcher). We check for "ELF" in the output — if absent,
+# it's a text file (the launcher script). This is more robust than matching
+# specific script-type strings, which vary across `file` versions.
 SHIM="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
-RAW_BUN="/data/data/com.termux/files/usr/lib/bun-termux/bun"
 
 if [ -f "$SHIM" ]; then
-  # Check if BUN_BIN is the launcher script (text) or the raw binary (ELF)
-  BUN_TYPE=$(file "$BUN_BIN" 2>/dev/null | head -1 || echo "unknown")
+  BUN_TYPE=$(file -b "$BUN_BIN" 2>/dev/null || echo "unknown")
 
   case "$BUN_TYPE" in
-    *"Bourne-Again shell script"*|*"ASCII text"*|*"shell script"*)
-      # It's a shell script — good, it's the launcher
-      :
-      ;;
-    *"ELF"*|*"executable"*)
-      # It's the raw binary — bad! Switch to the launcher if it exists.
+    *ELF*)
+      # It's an ELF binary — the raw bun, NOT the launcher
       if [ -x "$PREFIX/bin/bun" ] && [ "$BUN_BIN" != "$PREFIX/bin/bun" ]; then
-        echo "Warning: $BUN_BIN is the raw bun binary, not the launcher." >&2
+        echo "Warning: $BUN_BIN is the raw bun binary (ELF), not the launcher." >&2
         echo "  Switching to $PREFIX/bin/bun (the launcher) which sets LD_PRELOAD + MEMTAG_OPTIONS." >&2
         BUN_BIN="$PREFIX/bin/bun"
       else
-        echo "Warning: $BUN_BIN appears to be the raw binary, not the launcher." >&2
+        echo "Warning: $BUN_BIN is an ELF binary, not the launcher script." >&2
         echo "  FFI may SIGABRT. Install/reinstall bun-termux:" >&2
         echo "  curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash" >&2
       fi
+      ;;
+    *)
+      # Not an ELF — it's a text/script file (the launcher). Good.
+      :
       ;;
   esac
 fi

@@ -52,10 +52,15 @@ The changes are in `package.json` and `bunfig.toml` (no source files modified):
     }
   },
   "trustedDependencies": [
-    // tree-sitter, tree-sitter-bash, tree-sitter-powershell, web-tree-sitter
-    // REMOVED — their install scripts SIGABRT on Termux (MTE pointer truncation
-    // in node-gyp-build). opencode only uses the .wasm files, not native bindings.
-    "esbuild", "node-pty", "protobufjs", "electron"
+    // ALL entries removed — ANY install script that loads a native N-API
+    // module SIGABRTs on Termux (MTE pointer truncation). This affected
+    // tree-sitter-powershell, protobufjs, and would affect node-pty next.
+    // opencode's dev/runtime flow doesn't need any of these install scripts:
+    //   - esbuild: only needed for `bun run build`, not `bun run src/index.ts`
+    //   - node-pty: not used under Bun (bun-pty is used instead)
+    //   - protobufjs: pure JS fallback works
+    //   - tree-sitter-*: only .wasm files used (via web-tree-sitter WASM runtime)
+    //   - electron: not relevant for Android
   ]
 }
 ```
@@ -183,31 +188,33 @@ grep "your-package-name" bunfig.toml
 # Then re-run bun install
 ```
 
-### `bun install` fails with "tree-sitter-powershell terminated by SIGABRT"
+### `bun install` fails with "... terminated by SIGABRT" (tree-sitter, protobufjs, node-pty, etc.)
 
-The tree-sitter packages' install scripts run `node-gyp-build` which loads a
-native N-API binary. On Termux with MTE, this crashes:
+ANY install script that loads a native N-API module will SIGABRT on Termux
+with MTE (Memory Tagging Extension):
 ```
 Pointer tag for 0x... was truncated
-error: install script from "tree-sitter-powershell" terminated by SIGABRT
+error: install script from "protobufjs" terminated by SIGABRT
 ```
 
-The patch script removes tree-sitter-* from `trustedDependencies` so Bun
-skips their install scripts. The packages still install (their `.wasm` files
-are available), just the native bindings aren't compiled/loaded. opencode
-only uses the `.wasm` files via `web-tree-sitter`, so this is safe.
+The MTE fix shim (libbun-mte-fix.so) intercepts malloc/free, but N-API's
+module loading path (dlopen+dlsym) bypasses it — tagged pointers from
+Bionic's scudo allocator reach the N-API loader and crash.
 
-If you hit the same SIGABRT for a different package, remove it from
-`trustedDependencies` in `package.json`:
-```bash
-python3 -c "
-import json
-with open('package.json') as f: pkg = json.load(f)
-pkg['trustedDependencies'] = [x for x in pkg.get('trustedDependencies', []) if x != 'OFFENDING_PACKAGE']
-with open('package.json', 'w') as f: json.dump(pkg, f, indent=2); f.write('\n')
-"
-bun install
-```
+The patch script removes ALL entries from `trustedDependencies`, so Bun
+skips ALL dependency install scripts. The packages still install (their
+`.js`, `.wasm`, `.d.ts` files) — only native compilation/loading is skipped.
+This is safe because:
+- `esbuild`: only needed for `bun run build`, not dev/runtime
+- `node-pty`: not used under Bun (bun-pty is used instead)
+- `protobufjs`: pure JS fallback works
+- `tree-sitter-*`: only `.wasm` files used (via web-tree-sitter WASM runtime)
+- `electron`: not relevant for Android
+
+If you hit a SIGABRT for a package NOT in the original trustedDependencies
+list, it means the package has an install script that wasn't trusted (so it
+was already being skipped) — the crash is from a different cause. Check the
+full error message.
 
 ### `bun install` fails with "ENOENT reading .../@babel+core@..."
 
