@@ -14,7 +14,11 @@
 │  @xincli/opentui-react@0.4.10             ← React reconciler     │
 │  @xincli/opentui-solid@0.4.10             ← SolidJS binding      │
 │  @xincli/opentui-keymap@0.4.10            ← keymap utilities     │
-│  @xincli/opentui-core-android-arm64@0.4.10 ← native .so (12 MB)  │
+│  @xincli/opentui-core-android-arm64@0.4.11 ← native .so (12 MB)  │
+│                                                                 │
+│  Note: JS packages and the .so are versioned independently.     │
+│  The .so is on 0.4.11 to pick up a native-build fix while the   │
+│  JS packages remain on 0.4.10.                                  │
 └─────────────────────────────────────────────────────────────────┘
                               ▲
                               │ npm: aliases in catalog
@@ -28,7 +32,7 @@
 │      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10"        │
 │      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.10"       │
 │    optionalDependencies:                                        │
-│      "@xincli/opentui-core-android-arm64": "0.4.10"              │
+│      "@xincli/opentui-core-android-arm64": "0.4.11"              │
 │                                                                 │
 │  No overrides needed — @xincli packages directly depend on      │
 │  each other via npm: aliases in their own dependencies.         │
@@ -89,18 +93,33 @@ opencode run 'hello world'
 
 ## Common Workflows
 
-### After a new @xincli release (e.g. 0.4.10)
+### After a new @xincli release
+
+`rebuild-opencode.sh` accepts independent version overrides per package,
+because the JS packages and the native `.so` can move at different
+cadences (e.g. `.so`-only rebuilds).
 
 ```bash
 cd ~/opencode-bionic
 git pull
 
-# Rebuild with the new version
-XINCLI_CORE_VERSION=0.4.10 bash termux/rebuild-opencode.sh
-
-# Or use the default (0.4.10) — bump the default in the script first
+# Use whatever the script's built-in defaults are (currently core=0.4.10, so=0.4.11)
 bash termux/rebuild-opencode.sh
+
+# Override just the .so version (e.g. after a native-only rebuild)
+XINCLI_ANDROID_VERSION=0.4.12 bash termux/rebuild-opencode.sh
+
+# Bump the whole JS stack in one shot (core → also sets solid/keymap/react)
+XINCLI_CORE_VERSION=0.4.11 bash termux/rebuild-opencode.sh
+
+# Per-package overrides also work independently:
+#   XINCLI_CORE_VERSION, XINCLI_SOLID_VERSION, XINCLI_KEYMAP_VERSION,
+#   XINCLI_REACT_VERSION, XINCLI_ANDROID_VERSION
 ```
+
+The script sweeps stale `.bun` store dirs whose versions don't match the
+targets — this is what prevented the earlier bug where nested lockfile
+resolution kept bundling a stale `.so`.
 
 ### Publishing a new @xincli release
 
@@ -173,7 +192,7 @@ Previous versions used Bun's `overrides` field to force `@opentui/core` → `@xi
     }
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.10"
+    "@xincli/opentui-core-android-arm64": "0.4.11"
   }
 }
 ```
@@ -199,7 +218,9 @@ These patches are Termux-specific (not opentui-related) and remain necessary:
 | `SIGABRT` / `Pointer tag for 0x... was truncated` | MTE heap tagging + FFI | Ensure `MEMTAG_OPTIONS=off` and `LD_PRELOAD` contains `libbun-android-fix.so` |
 | `Cannot find module '@ff-labs/fff-bun'` | Package has `os:` restriction, skipped on Android | Patch 1f handles this (lazy require + null guard) — run `apply-termux-patches.sh` |
 | `@opentui/core is @opentui/core (expected @xincli/opentui-core)` | Catalog pin not applied | Run `apply-termux-patches.sh`, then `bun install` again |
-| `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.10 --optional` |
+| `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.11 --optional` |
+| `@opentui/core not resolvable in any node_modules` | `find` used to miss Bun's isolated symlink layout | Fixed in `rebuild-opencode.sh` — uses explicit path probes + `packages/*/node_modules` glob fallback |
+| Stale `.so` bundled after a native-only bump | Nested lockfile resolution reused a stale `.bun` store dir | `rebuild-opencode.sh` now sweeps `.bun` store dirs whose versions don't match target |
 
 ## Related repositories
 

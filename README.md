@@ -2,24 +2,33 @@
 
 > Fork of [sst/opencode](https://github.com/sst/opencode) patched to run on
 > Android/Termux under [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)
-> with [@xincli/opentui-core](https://www.npmjs.com/package/@xincli/opentui-core)
-> native binding.
+> with [@xincli/opentui-*](https://www.npmjs.com/~xincli) native bindings.
 
-[![Termux](https://img.shields.io/badge/Platform-Termux%20Android-black.svg)](https://termux.dev)
+[![Termux](https://img.shields.io/badge/Platform-Termux%20Android%20arm64-black.svg)](https://termux.dev)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%20(bd--loser%20fork)-blue.svg)](https://github.com/bd-loser/bun-termux)
-[![opentui](https://img.shields.io/badge/opentui-@xincli%2Fopentui--core%400.4.8-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)
+[![opentui-js](https://img.shields.io/badge/opentui--js-@xincli%400.4.10-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)
+[![opentui-so](https://img.shields.io/badge/libopentui.so-@xincli%400.4.11-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core-android-arm64)
+
+## Status
+
+✅ **Working.** Both `bun run` (dev mode) and the compiled `opencode` binary
+launch the TUI on Termux/Android arm64. The `0.4.10` release fixed the
+compiled-binary crash (`.so` extraction from bunfs), and `0.4.11` refreshes
+the native `libopentui.so` build.
 
 ## Why this fork exists
 
 opencode's TUI is powered by [opentui](https://opentui.com) — a native Zig
-library with TypeScript bindings. Upstream `@opentui/core@0.4.3` has no
+library with TypeScript bindings. Upstream `@opentui/core` has no
 Android/Termux support: its `resolveNativePackage()` only knows
 darwin/linux/win32, and the linux variant is a glibc binary that Bionic's
 linker rejects.
 
-This fork uses the user's `@xincli/opentui-core@0.4.8` npm package (which
-has Termux detection baked in) via Bun's `overrides` field. **No source
-files are modified** — only `package.json` is patched.
+This fork routes `@opentui/core`, `@opentui/solid`, and `@opentui/keymap`
+to their [`@xincli` counterparts](https://github.com/bd-loser/opentui)
+via Bun workspace **catalog pins** (no `overrides` needed since 0.4.10),
+and adds `@xincli/opentui-core-android-arm64` as an `optionalDependency`
+so the native `libopentui.so` gets installed on arm64 Android only.
 
 ## Quick Start
 
@@ -30,39 +39,36 @@ pkg install git python build-essential clang make
 
 # Install patched bun-termux
 curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
+bun --version   # should print 1.3.14
 
 # 2. Clone this fork
-git clone https://github.com/bd-loser/opencode-bionic.git
-cd opencode-bionic
+git clone https://github.com/bd-loser/opencode-bionic.git ~/opencode-bionic
+cd ~/opencode-bionic
 
-# 3. Install dependencies
-bun install
+# 3. One-command setup (clones opencode, installs deps, patches, smoke test)
+bash termux/setup.sh
 
-# 4. Apply Termux patches (edits package.json, verifies env)
-bash termux/apply-termux-patches.sh
+# 4. Build + install the compiled binary
+bash termux/rebuild-opencode.sh
 
-# 5. Install again to pick up the new override + optionalDependency
-bun install
-
-# 6. Run opencode
-bash termux/run-opencode-termux.sh
+# 5. Run from anywhere
+opencode
+opencode --version
+opencode run 'hello world'
 ```
 
-Or use the one-shot setup script:
-```bash
-git clone https://github.com/bd-loser/opencode-bionic.git
-cd opencode-bionic
-bash termux/setup-opencode-termux.sh
-```
+For dev-mode iteration (no compile step), use `bash termux/run-opencode-termux.sh`.
 
 ## Documentation
 
-- **[termux/README.md](termux/README.md)** — Full root-cause analysis, debugging
-  guide, compatibility matrix
-- **[termux/apply-termux-patches.sh](termux/apply-termux-patches.sh)** — The
+- **[termux/README.md](termux/README.md)** — full architecture, script reference,
+  workflows (rebuild, release, debug), troubleshooting matrix
+- **[termux/apply-termux-patches.sh](termux/apply-termux-patches.sh)** — the
   patcher (idempotent, verify-each, marked)
-- **[termux/run-opencode-termux.sh](termux/run-opencode-termux.sh)** — Launcher
-  with env setup + LD_PRELOAD verification
+- **[termux/rebuild-opencode.sh](termux/rebuild-opencode.sh)** — one-command
+  pull + patch + install + build + install for the compiled binary
+- **[termux/release-opentui.sh](termux/release-opentui.sh)** — orchestrate
+  publishing the 5 `@xincli` packages via GitHub Actions
 
 ## Related repos
 
@@ -76,24 +82,14 @@ bash termux/setup-opencode-termux.sh
 
 | Package | Version | Purpose |
 |---|---|---|
-| `@xincli/opentui-core` | 0.4.8 | Compiled opentui core JS with Termux detection |
-| `@xincli/opentui-core-android-arm64` | 0.4.8 | Native `libopentui.so` for Android arm64 (Bionic) |
+| `@xincli/opentui-core` | 0.4.10 | Compiled opentui core JS with Termux detection + bunfs `.so` extraction |
+| `@xincli/opentui-react` | 0.4.10 | React reconciler |
+| `@xincli/opentui-solid` | 0.4.10 | SolidJS binding (depends on `@xincli/opentui-core` directly) |
+| `@xincli/opentui-keymap` | 0.4.10 | Keymap utilities |
+| `@xincli/opentui-core-android-arm64` | 0.4.11 | Native `libopentui.so` for Android arm64 (Bionic) |
 
-## Status
-
-- ✅ Patch script works (verified via `termux/scripts/dry-run-patch-test.sh`)
-- ⚠️ Runtime on real Termux UNVERIFIED — needs testing on a phone
-- ⚠️ `bun-pty` (used for terminal sessions) is unverified on Android
-- ⚠️ `@opentui/solid@0.4.3` API compatibility with `@xincli/opentui-core@0.4.8`
-  is unverified
-
-## Iterating
-
-This is a debug-as-we-go effort. When you hit an issue on the phone:
-
-1. Capture the full stderr + stack trace
-2. Check `termux/README.md` → "Debugging" section
-3. If new, paste the error — we'll find root cause before any further code edits
+JS packages and the native `.so` are versioned independently — the `.so` can
+be re-published without a JS bump if only the native build changes.
 
 ## License
 
