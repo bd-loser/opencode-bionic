@@ -216,6 +216,9 @@ declare -A idempo_checks=(
   ["catalog[@opentui/core]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/core\"]=npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
   ["catalog[@opentui/solid]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/solid\"]=npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}"
   ["catalog[@opentui/keymap]"]="pkg[\"workspaces\"][\"catalog\"][\"@opentui/keymap\"]=npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}"
+  ["overrides[@opentui/core]"]="pkg[\"overrides\"][\"@opentui/core\"]=npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}"
+  ["overrides[@opentui/solid]"]="pkg[\"overrides\"][\"@opentui/solid\"]=npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}"
+  ["overrides[@opentui/keymap]"]="pkg[\"overrides\"][\"@opentui/keymap\"]=npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}"
   ["optionalDependencies[android-arm64]"]="pkg[\"optionalDependencies\"][\"@xincli/opentui-core-android-arm64\"]=${XINCLI_ANDROID_VERSION}"
   ["overrides[android-arm64]"]="pkg[\"overrides\"][\"@xincli/opentui-core-android-arm64\"]=${XINCLI_ANDROID_VERSION}"
 )
@@ -264,19 +267,27 @@ for name, alias in pins.items():
         catalog[name] = alias
         print(f"    [1a] catalog['{name}']: <added> -> {alias}")
 
-# Remove stale @opentui/* entries from overrides (from old patch versions).
-# We don't need overrides anymore — the catalog pins handle everything.
-overrides = pkg.get("overrides", {})
-removed_overrides = []
-for key in list(overrides.keys()):
-    if key in ("@opentui/core", "@opentui/solid", "@opentui/keymap"):
-        removed_overrides.append(f"{key}={overrides[key]}")
-        del overrides[key]
-if removed_overrides:
-    print(f"    [1b] Removed stale overrides: {removed_overrides}")
-    if not overrides:
-        del pkg["overrides"]
-        print(f"    [1b] overrides field is now empty — removed entirely")
+# v2 originally removed @opentui/* from overrides in favor of catalog pins,
+# but that broke `bun build --compile` on a fresh install: @xincli/opentui-keymap's
+# own compiled source contains bare `import "@opentui/keymap"`, `"@opentui/solid"`,
+# and subpath variants (/extras, /addons, /html, /opentui, /react, /solid,
+# /extras/graph, /addons/opentui). Catalog pins only rewrite references from
+# workspace consumers — they don't reach imports inside a nested @xincli
+# package's own tree, so the bundler failed with:
+#   error: Could not resolve: "@opentui/keymap". Maybe you need to "bun install"?
+# Re-adding root overrides for all 3 @opentui/* names forces every position
+# in the tree (nested included) to resolve to the @xincli/* aliases.
+# Catalog pins stay too — belt-and-suspenders for direct workspace refs.
+overrides = pkg.setdefault("overrides", {})
+opentui_pins = {
+    "@opentui/core":  f"npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}",
+    "@opentui/solid": f"npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}",
+    "@opentui/keymap": f"npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}",
+}
+for name, alias in opentui_pins.items():
+    old = overrides.get(name, "<none>")
+    overrides[name] = alias
+    print(f"    [1b] overrides['{name}']: {old} -> {alias}")
 
 # Add @xincli/opentui-core-android-arm64 as optionalDependency so the .so
 # gets fetched on aarch64-Termux.
@@ -309,7 +320,7 @@ pkg["_opencodeBionic"] = {
         "android_arm64":     "${XINCLI_ANDROID_VERSION}",
     },
     "marker": "${PATCH_MARKER}",
-    "approach": "clean-catalog-pins-v2",
+    "approach": "catalog-pins-plus-overrides-v3",
     "note": "Patched by apply-termux-patches.sh for Termux/Android. Safe to remove this key."
 }
 
@@ -327,6 +338,9 @@ PYEOF
   V4=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["optionalDependencies"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
   V5=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["_opencodeBionic"]["marker"]' "${PATCH_MARKER}")
   V6=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@xincli/opentui-core-android-arm64"]' "${XINCLI_ANDROID_VERSION}")
+  V7=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/core"]' "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}")
+  V8=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/solid"]' "npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}")
+  V9=$(verify_json_key "$ROOT_PKG_JSON" 'pkg["overrides"]["@opentui/keymap"]' "npm:@xincli/opentui-keymap@${XINCLI_KEYMAP_VERSION}")
 
   [ "$V1" = "OK" ] && ok "catalog[@opentui/core] → npm:@xincli/opentui-core verified" || fail "catalog[@opentui/core] NOT verified (got: $V1)"
   [ "$V2" = "OK" ] && ok "catalog[@opentui/solid] → npm:@xincli/opentui-solid verified" || fail "catalog[@opentui/solid] NOT verified (got: $V2)"
@@ -334,6 +348,9 @@ PYEOF
   [ "$V4" = "OK" ] && ok "optionalDependencies[@xincli/opentui-core-android-arm64] verified" || fail "optionalDependency NOT verified (got: $V4)"
   [ "$V5" = "OK" ] && ok "marker _opencodeBionic verified" || fail "marker NOT verified (got: $V5)"
   [ "$V6" = "OK" ] && ok "overrides[@xincli/opentui-core-android-arm64] verified" || fail "override NOT verified (got: $V6)"
+  [ "$V7" = "OK" ] && ok "overrides[@opentui/core] → npm:@xincli/opentui-core verified" || fail "overrides[@opentui/core] NOT verified (got: $V7)"
+  [ "$V8" = "OK" ] && ok "overrides[@opentui/solid] → npm:@xincli/opentui-solid verified" || fail "overrides[@opentui/solid] NOT verified (got: $V8)"
+  [ "$V9" = "OK" ] && ok "overrides[@opentui/keymap] → npm:@xincli/opentui-keymap verified" || fail "overrides[@opentui/keymap] NOT verified (got: $V9)"
 fi
 
 # =============================================================================
