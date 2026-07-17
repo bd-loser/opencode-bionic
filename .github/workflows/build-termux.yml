@@ -15,17 +15,18 @@ jobs:
 
       - name: Build inside termux-docker
         run: |
-          # WHY WE DON'T BUILD ON THE BIND MOUNT:
-          # Two prior attempts (default user, then --user root) both failed with
-          #   EACCES: Permission denied: failed to create temporary file to save lockfile
-          #   ENOENT: failed to symlink/link package ... (thousands of these)
-          # The image's entrypoint drops privs to `system` regardless of --user,
-          # and even when it doesn't, bun's atomic-rename lockfile write across
-          # the bind mount is unreliable. So we do all real work inside the
-          # container's own filesystem ($BUILD_ROOT) and only copy the final
-          # binary back to /workspace for upload-artifact to pick up.
+          # /workspace is READ-ONLY for the container's `system` user
+          # (termux-docker's entrypoint drops privs regardless of --user).
+          # So we mount a SECOND directory that the runner pre-creates with
+          # world-writable perms — the container writes the artifact there,
+          # and the runner picks it up from the host side after docker exits.
+          mkdir -p "$GITHUB_WORKSPACE/../out"
+          OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
+          chmod 0777 "$OUT_HOST"
+          echo "OUT_HOST=$OUT_HOST"
           docker run --rm \
             -v "$GITHUB_WORKSPACE:/workspace" \
+            -v "$OUT_HOST:/out" \
             -w /workspace \
             termux/termux-docker:aarch64 \
             bash -c '
@@ -76,20 +77,23 @@ jobs:
               BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
               # `file` isn't in termux-docker's default toolset; use the shell
               # builtin `command -v`/`ls` for existence + basic sanity instead.
-              # (Prior runs died here with `bash: line 47: file: command not found`
-              # AFTER a successful build + smoke test, which was misleading.)
               [ -x "$BIN" ] || { echo "ERROR: $BIN missing or not executable"; exit 1; }
               ls -la "$BIN"
               head -c 4 "$BIN" | od -An -c | head -1  # ELF magic
 
-              # Publish the artifact into the mount so the runner can upload it.
-              # We only need to write ONE file, which minimizes exposure to
-              # whatever makes the mount cranky.
-              mkdir -p /workspace/artifact
-              cp "$BIN" /workspace/artifact/opencode
-              chmod 0644 /workspace/artifact/opencode
-              ls -la /workspace/artifact/
+              # Publish the artifact to /out (mounted from a world-writable
+              # host dir), since /workspace is read-only for this container user.
+              cp "$BIN" /out/opencode
+              chmod 0644 /out/opencode
+              ls -la /out/
             '
+
+      - name: Stage artifact for upload
+        run: |
+          OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
+          mkdir -p "$GITHUB_WORKSPACE/artifact"
+          cp "$OUT_HOST/opencode" "$GITHUB_WORKSPACE/artifact/opencode"
+          ls -la "$GITHUB_WORKSPACE/artifact/"
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
