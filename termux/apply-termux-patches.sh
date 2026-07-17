@@ -268,16 +268,16 @@ for name, alias in pins.items():
         print(f"    [1a] catalog['{name}']: <added> -> {alias}")
 
 # v2 originally removed @opentui/* from overrides in favor of catalog pins,
-# but that broke `bun build --compile` on a fresh install: @xincli/opentui-keymap's
-# own compiled source contains bare `import "@opentui/keymap"`, `"@opentui/solid"`,
+# but that broke bun build --compile on a fresh install: @xincli/opentui-keymap
+# own compiled source contains bare imports like "@opentui/keymap", "@opentui/solid",
 # and subpath variants (/extras, /addons, /html, /opentui, /react, /solid,
 # /extras/graph, /addons/opentui). Catalog pins only rewrite references from
-# workspace consumers — they don't reach imports inside a nested @xincli
-# package's own tree, so the bundler failed with:
-#   error: Could not resolve: "@opentui/keymap". Maybe you need to "bun install"?
+# workspace consumers -- they do not reach imports inside a nested @xincli
+# package own tree, so the bundler failed with:
+#   error: Could not resolve: "@opentui/keymap". Maybe you need to bun install?
 # Re-adding root overrides for all 3 @opentui/* names forces every position
 # in the tree (nested included) to resolve to the @xincli/* aliases.
-# Catalog pins stay too — belt-and-suspenders for direct workspace refs.
+# Catalog pins stay too -- belt-and-suspenders for direct workspace refs.
 overrides = pkg.setdefault("overrides", {})
 opentui_pins = {
     "@opentui/core":  f"npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}",
@@ -299,7 +299,7 @@ print(f"    [1c] optionalDependencies['@xincli/opentui-core-android-arm64']: {ol
 # Force ALL nested resolutions of the android-arm64 native package to the
 # fixed version. Without this override, @xincli/opentui-core@0.4.10 pulls
 # in its own pinned android-arm64@0.4.10 (with the broken new URL() asset
-# pattern) as a nested optionalDependency, so `bun build --compile` bundles
+# pattern) as a nested optionalDependency, so bun build --compile bundles
 # stale JS from the 0.4.10 copy instead of the 0.4.11 fix.
 overrides = pkg.setdefault("overrides", {})
 old_ovr = overrides.get("@xincli/opentui-core-android-arm64", "<none>")
@@ -398,7 +398,7 @@ with open("$BUNFIG_FILE", "r", encoding="utf-8") as f:
 #   minimumReleaseAgeExcludes = ["@ai-sdk/...", ..., "@opentui/core", ..., "electron-publish"]
 # We append our @xincli packages before the closing bracket.
 
-# Strategy: find the closing `]"` of the minimumReleaseAgeExcludes array and
+# Strategy: find the closing bracket of the minimumReleaseAgeExcludes array and
 # insert our entries before it. Use regex to match the array content.
 pattern = r'(minimumReleaseAgeExcludes\s*=\s*\[)([^\]]*)(\])'
 m = re.search(pattern, content)
