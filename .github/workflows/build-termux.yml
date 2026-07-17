@@ -74,23 +74,32 @@ jobs:
               OPENCODE_VERSION="0.0.0-termux-ci" \
                 bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
 
-              BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
-              # `file` isn't in termux-docker's default toolset; use the shell
-              # builtin `command -v`/`ls` for existence + basic sanity instead.
-              [ -x "$BIN" ] || { echo "ERROR: $BIN missing or not executable"; exit 1; }
-              ls -la "$BIN"
-              head -c 4 "$BIN" | od -An -c | head -1  # ELF magic
+              # Enable command tracing for the artifact-publish tail so we get
+              # visibility if anything below silently exits.
+              echo "=== POST-BUILD: publishing artifact ==="
+              set -x
 
-              # Publish the artifact to /out (mounted from a world-writable
-              # host dir), since /workspace is read-only for this container user.
+              BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+              test -f "$BIN"
+              test -x "$BIN" || chmod +x "$BIN"
+              ls -la "$BIN"
+
+              # /workspace is read-only for this container user; /out was
+              # bind-mounted from a world-writable host dir specifically for
+              # this handoff.
+              ls -la /out/ || true
               cp "$BIN" /out/opencode
               chmod 0644 /out/opencode
               ls -la /out/
+              set +x
+              echo "=== POST-BUILD: done ==="
             '
 
       - name: Stage artifact for upload
         run: |
+          set -eux
           OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
+          ls -la "$OUT_HOST/" || true
           mkdir -p "$GITHUB_WORKSPACE/artifact"
           cp "$OUT_HOST/opencode" "$GITHUB_WORKSPACE/artifact/opencode"
           ls -la "$GITHUB_WORKSPACE/artifact/"
