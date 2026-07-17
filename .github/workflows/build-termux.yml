@@ -1,0 +1,38 @@
+name: build-termux
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build inside termux-docker
+        run: |
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            -w /workspace \
+            termux/termux-docker:aarch64 \
+            bash -c '
+              set -euo pipefail
+              pkg update -y
+              pkg install -y git python curl dpkg
+              curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
+              OPENCODE_ROOT=/workspace SKIP_SMOKE_TEST=1 bash termux/setup.sh
+              bash termux/build-opencode-termux.sh
+              file packages/opencode/dist/opencode-android-arm64/bin/opencode
+              ls -la packages/opencode/dist/opencode-android-arm64/bin/opencode
+            '
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-android-arm64
+          path: packages/opencode/dist/opencode-android-arm64/bin/opencode
+          if-no-files-found: error
