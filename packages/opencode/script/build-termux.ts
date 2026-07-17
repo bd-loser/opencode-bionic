@@ -40,6 +40,50 @@ import pkg from "../package.json"
 const sourcemapsFlag = process.argv.includes("--sourcemaps")
 const plugin = createSolidTransformPlugin()
 
+// -----------------------------------------------------------------------------
+// opentuiAliasPlugin — remap bare @opentui/* imports to @xincli/opentui-*.
+// -----------------------------------------------------------------------------
+// The published @xincli/opentui-{keymap,solid} packages contain compiled JS
+// that hardcodes bare imports like `import "@opentui/keymap"`, `"@opentui/solid"`,
+// and subpath variants (/extras, /addons, /html, /opentui, /react, /solid,
+// /components, /jsx-runtime, /jsx-dev-runtime, /extras/graph, /addons/opentui).
+//
+// Root package.json `overrides` and workspace `catalog:` pins rewrite refs
+// from *consumers* but do NOT propagate into a nested @xincli package's own
+// tree under bun's isolated linker (node_modules/.bun/<pkg>@ver/...). The
+// bundler sees `import "@opentui/keymap"` inside @xincli/opentui-keymap's own
+// runtime-modules.js and can't resolve it — @opentui/keymap simply isn't in
+// that package's isolated scope.
+//
+// This plugin fixes it at bundle time: intercept every "@opentui/{keymap,solid}"
+// specifier (and their subpaths), rewrite to the matching "@xincli/*" package
+// (which IS installed and IS in scope of the root workspace), and hand off to
+// bun's default resolver.
+// -----------------------------------------------------------------------------
+const opentuiAliasPlugin: import("bun").BunPlugin = {
+  name: "opentui-alias",
+  setup(build) {
+    const remap: Record<string, string> = {
+      "@opentui/keymap": "@xincli/opentui-keymap",
+      "@opentui/solid": "@xincli/opentui-solid",
+      "@opentui/core": "@xincli/opentui-core",
+    }
+    build.onResolve({ filter: /^@opentui\// }, async (args) => {
+      for (const [from, to] of Object.entries(remap)) {
+        if (args.path === from || args.path.startsWith(from + "/")) {
+          const rewritten = to + args.path.slice(from.length)
+          // Re-run bun's resolver on the rewritten specifier from the same
+          // importer. Without this, bun would treat "rewritten" as an already-
+          // resolved absolute path and fail to find it on disk.
+          const resolved = await build.resolve(rewritten, args.importer)
+          return { path: resolved }
+        }
+      }
+      return null
+    })
+  },
+}
+
 console.log("==========================================")
 console.log("Building opencode for Termux/Android arm64")
 console.log("==========================================")
@@ -85,7 +129,7 @@ console.log(`  outfile: dist/${name}/bin/opencode`)
 const result = await Bun.build({
   conditions: ["bun", "node"],
   tsconfig: "./tsconfig.json",
-  plugins: [plugin],
+  plugins: [opentuiAliasPlugin, plugin],
   external: ["node-gyp"],
   format: "esm",
   minify: true,
