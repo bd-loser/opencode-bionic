@@ -15,7 +15,15 @@ jobs:
 
       - name: Build inside termux-docker
         run: |
+          # --user root: termux-docker's default user is `system` (uid 1000),
+          # but actions/checkout writes files as the GHA runner (uid 1001), so
+          # the container user can't write to /workspace. Running as root inside
+          # termux is supported (pkg/bun read PREFIX+HOME from env, not uid) and
+          # is the simplest way to sidestep the uid mismatch — otherwise bun
+          # install fails with EACCES on the lockfile temp write and ENOENT on
+          # every symlink into node_modules.
           docker run --rm \
+            --user root \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             termux/termux-docker:aarch64 \
