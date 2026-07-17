@@ -74,8 +74,13 @@ jobs:
                 bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
 
               BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
-              file "$BIN"
+              # `file` isn't in termux-docker's default toolset; use the shell
+              # builtin `command -v`/`ls` for existence + basic sanity instead.
+              # (Prior runs died here with `bash: line 47: file: command not found`
+              # AFTER a successful build + smoke test, which was misleading.)
+              [ -x "$BIN" ] || { echo "ERROR: $BIN missing or not executable"; exit 1; }
               ls -la "$BIN"
+              head -c 4 "$BIN" | od -An -c | head -1  # ELF magic
 
               # Publish the artifact into the mount so the runner can upload it.
               # We only need to write ONE file, which minimizes exposure to
