@@ -63,7 +63,15 @@ jobs:
               cd -
 
               OPENCODE_ROOT="$BUILD_ROOT" SKIP_REINSTALL=1 SKIP_SMOKE_TEST=1 bash "$BUILD_ROOT/termux/setup.sh"
-              OPENCODE_ROOT="$BUILD_ROOT" bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
+
+              # build-termux.ts (via packages/script/src/index.ts) calls
+              # `git branch --show-current` when neither OPENCODE_CHANNEL nor
+              # OPENCODE_VERSION is set. We rsynced without .git, so provide
+              # them explicitly so the version-detection branch skips git.
+              OPENCODE_ROOT="$BUILD_ROOT" \
+              OPENCODE_CHANNEL="dev" \
+              OPENCODE_VERSION="0.0.0-termux-ci" \
+                bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
 
               BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
               file "$BIN"
