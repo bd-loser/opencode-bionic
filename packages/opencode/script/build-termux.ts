@@ -69,6 +69,20 @@ const opentuiAliasPlugin: import("bun").BunPlugin = {
       "@opentui/core": "@xincli/opentui-core",
     }
     build.onResolve({ filter: /^@opentui\// }, (args) => {
+      // Only rewrite when the importer itself is a @xincli/opentui-* file.
+      // Consumer packages (packages/opencode, packages/tui, etc.) still
+      // declare `@opentui/*` in their package.json — catalog pins alias
+      // those on disk to the @xincli tarball, but the specifier they
+      // resolve is still `@opentui/*`. If we rewrite unconditionally,
+      // consumer imports fail with `Cannot find module @xincli/...`
+      // because their isolated node_modules has no @xincli/* entry.
+      //
+      // The nested-package problem (bun's isolated linker not letting a
+      // @xincli package see @opentui/*) only affects files INSIDE the
+      // @xincli tree (node_modules/.bun/@xincli+opentui-*@ver/.../@xincli/
+      // opentui-*/src/*.js), so scope the rewrite to those importers.
+      const importer = args.importer || ""
+      if (!/@xincli[/+]opentui-/.test(importer)) return null
       for (const [from, to] of Object.entries(remap)) {
         if (args.path === from || args.path.startsWith(from + "/")) {
           const rewritten = to + args.path.slice(from.length)
@@ -76,9 +90,8 @@ const opentuiAliasPlugin: import("bun").BunPlugin = {
           // resolution), and `build.resolve()` is not implemented yet
           // (oven-sh/bun#2771). Use Bun.resolveSync to convert the bare
           // specifier to an absolute file path anchored at the importer's
-          // directory (or cwd when there's no importer, e.g. entry points).
-          const parent = args.importer ? path.dirname(args.importer) : dir
-          const resolved = Bun.resolveSync(rewritten, parent)
+          // directory.
+          const resolved = Bun.resolveSync(rewritten, path.dirname(importer))
           return { path: resolved }
         }
       }
