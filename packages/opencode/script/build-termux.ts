@@ -68,14 +68,17 @@ const opentuiAliasPlugin: import("bun").BunPlugin = {
       "@opentui/solid": "@xincli/opentui-solid",
       "@opentui/core": "@xincli/opentui-core",
     }
-    build.onResolve({ filter: /^@opentui\// }, async (args) => {
+    build.onResolve({ filter: /^@opentui\// }, (args) => {
       for (const [from, to] of Object.entries(remap)) {
         if (args.path === from || args.path.startsWith(from + "/")) {
           const rewritten = to + args.path.slice(from.length)
-          // Re-run bun's resolver on the rewritten specifier from the same
-          // importer. Without this, bun would treat "rewritten" as an already-
-          // resolved absolute path and fail to find it on disk.
-          const resolved = await build.resolve(rewritten, args.importer)
+          // Bun's plugin API treats a returned `path` as final (no further
+          // resolution), and `build.resolve()` is not implemented yet
+          // (oven-sh/bun#2771). Use Bun.resolveSync to convert the bare
+          // specifier to an absolute file path anchored at the importer's
+          // directory (or cwd when there's no importer, e.g. entry points).
+          const parent = args.importer ? path.dirname(args.importer) : dir
+          const resolved = Bun.resolveSync(rewritten, parent)
           return { path: resolved }
         }
       }
