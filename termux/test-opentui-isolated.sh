@@ -79,19 +79,6 @@ if [ ! -x "$BUN_BIN" ]; then
   exit 1
 fi
 
-# Verify bun is the launcher (not raw binary)
-BUN_TYPE=$(file -b "$BUN_BIN" 2>/dev/null || echo "unknown")
-case "$BUN_TYPE" in
-  *ELF*)
-    fail "$BUN_BIN is the raw bun binary (ELF), not the launcher."
-    echo "The launcher sets LD_PRELOAD (MTE fix + SELinux shim). Without it, FFI will SIGABRT." >&2
-    echo "Reinstall bun-termux:" >&2
-    echo "  curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash" >&2
-    exit 1
-    ;;
-esac
-ok "bun is the launcher script (not raw binary)"
-
 # --- Create test project -----------------------------------------------------
 echo ""
 echo "=== Creating test project ==="
@@ -240,8 +227,6 @@ echo ""
 echo "=== Running test (3 second render) ==="
 echo ""
 
-# Set env for the test run
-export MEMTAG_OPTIONS=off
 export TMPDIR="${TMPDIR:-$PREFIX/tmp}"
 export TERM="${TERM:-xterm-256color}"
 
@@ -272,11 +257,6 @@ else
   echo "  'undefined symbol: opentui_*'"
   echo "    → ABI mismatch between @xincli/opentui-core JS and the .so"
   echo "    → rebuild .so from same opentui version as the JS bindings"
-  echo ""
-  echo "  'Pointer tag for 0x... was truncated' + SIGABRT"
-  echo "    → MTE issue in FFI path"
-  echo "    → check: file \$PREFIX/bin/bun (must be launcher, not raw ELF)"
-  echo "    → check: echo \$MEMTAG_OPTIONS (must be 'off')"
   echo ""
   echo "  'Cannot find export X in @xincli/opentui-core'"
   echo "    → @xincli/opentui-solid@0.4.10 API break with @xincli/opentui-core@0.4.10"

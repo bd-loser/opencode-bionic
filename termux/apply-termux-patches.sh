@@ -54,9 +54,6 @@
 #        condition loads bun-pty instead). No issue.
 #
 #   5. (Runtime checks, no source patch):
-#      - Verify LD_PRELOAD shim is active (else FFI SIGABRTs from MTE)
-#      - Verify MEMTAG_OPTIONS=off (else scudo tags heap pointers, FFI
-#        passes tagged pointers to free(), SIGABRT)
 #      - Verify clipboard tool exists (else clipboard features silently no-op)
 #
 # ROBUSTNESS RULES (same as bun-termux/apply-android-patches.sh):
@@ -66,7 +63,7 @@
 #   - JSON edits via python3 (json module), not sed — survives reformatting
 #
 # PREREQUISITES:
-#   - bun-termux installed (provides `bun` and `bunx` with LD_PRELOAD shim)
+#   - bun-termux installed (provides `bun` and `bunx` patched for Termux)
 #     -> curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
 #   - opencode cloned and `bun install` already run successfully
 #
@@ -1038,45 +1035,6 @@ else
   warn "no clipboard tool found. Install termux-api: pkg install termux-api"
   info "or symlink: ln -s \$PREFIX/bin/termux-clipboard-set \$PREFIX/bin/xclip"
   info "clipboard features will silently no-op without this"
-fi
-
-# =============================================================================
-# PATCH 5: Verify bun-termux LD_PRELOAD shim is active
-# =============================================================================
-#
-# Root cause:
-#   The user's bun-termux launchers ($PREFIX/bin/bun, $PREFIX/bin/bunx) set
-#   LD_PRELOAD=libbun-android-fix.so and MEMTAG_OPTIONS=off before exec'ing
-#   the patched bun binary. If the user invokes bun directly (bypassing the
-#   launcher) OR runs opencode via a wrapper that resets env, the shim is
-#   missing and bun's FFI will crash with SIGABRT (MTE heap tagging).
-#
-# Fix:
-#   Verify the shim is loaded. Warn (don't fail) if missing.
-# =============================================================================
-
-echo ""
-echo "=== Patch 5: Verify bun-termux LD_PRELOAD shim ==="
-
-SHIM_PATH="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
-if [ -f "$SHIM_PATH" ]; then
-  ok "shim exists: $SHIM_PATH"
-  if [ -n "${LD_PRELOAD:-}" ] && case "$LD_PRELOAD" in *libbun-android-fix.so*) true;; *) false;; esac; then
-    ok "LD_PRELOAD contains libbun-android-fix.so"
-  else
-    warn "LD_PRELOAD does NOT contain libbun-android-fix.so"
-    info "Make sure you invoke opencode via the bun-termux launcher:"
-    info "  $PREFIX/bin/bun run packages/opencode/src/index.ts"
-    info "NOT via /data/data/com.termux/files/usr/lib/bun-termux/bun directly"
-  fi
-  if [ "${MEMTAG_OPTIONS:-}" = "off" ]; then
-    ok "MEMTAG_OPTIONS=off (MTE disabled)"
-  else
-    warn "MEMTAG_OPTIONS is not 'off' — FFI may SIGABRT"
-  fi
-else
-  warn "bun-termux shim not found at $SHIM_PATH"
-  info "Install bun-termux: curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash"
 fi
 
 # =============================================================================

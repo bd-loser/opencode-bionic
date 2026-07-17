@@ -6,7 +6,7 @@
 # WHAT THIS DOES:
 #   1. Verifies prerequisites (Termux, bun-termux, git)
 #   2. Clones opencode (or uses existing checkout at $OPENCODE_ROOT)
-#   3. Runs `bun install` (the bun-termux launcher handles LD_PRELOAD)
+#   3. Runs `bun install`
 #   4. Applies Termux patches (apply-termux-patches.sh)
 #   5. Verifies the result and prints next steps
 #
@@ -61,15 +61,6 @@ command -v bun >/dev/null 2>&1 || fail "bun not found. Install bun-termux:
   curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash"
 ok "bun: $(bun --version)"
 
-# Verify bun is the patched Termux build (check LD_PRELOAD shim exists)
-SHIM="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
-if [ ! -f "$SHIM" ]; then
-  warn "bun-termux shim not found at $SHIM"
-  info "FFI may SIGABRT. Reinstall bun-termux if opencode crashes on startup."
-else
-  ok "bun-termux shim present"
-fi
-
 # --- 3. Locate or clone opencode ---------------------------------------------
 echo ""
 echo "Locating opencode source..."
@@ -113,8 +104,6 @@ cd "$OPENCODE_ROOT"
 echo ""
 echo "Running bun install (this may take a while on first run)..."
 
-# Patched bun already handles /tmp, /etc/resolv.conf, linkat, etc. via the
-# LD_PRELOAD shim. Just run it.
 if [ -d "$OPENCODE_ROOT/node_modules" ]; then
   warn "node_modules already exists. Skipping install."
   warn "If you hit issues, run: rm -rf node_modules && bun install"
@@ -153,9 +142,7 @@ echo "  bash $SCRIPT_DIR/run-opencode-termux.sh -- run 'hello world'"
 echo "  bash $SCRIPT_DIR/run-opencode-termux.sh -- doctor"
 echo ""
 echo "If opencode crashes on startup, check:"
-echo "  1. LD_PRELOAD contains libbun-android-fix.so"
-echo "  2. MEMTAG_OPTIONS=off is set"
-echo "  3. @xincli/opentui-core-android-arm64 is in node_modules/"
-echo "  4. The .so is ARM64 ELF: file node_modules/@xincli/opentui-core-android-arm64/libopentui.so"
+echo "  1. @xincli/opentui-core-android-arm64 is in node_modules/"
+echo "  2. The .so is ARM64 ELF: file node_modules/@xincli/opentui-core-android-arm64/libopentui.so"
 echo ""
 echo "Report issues with full output. Be precise about the failing step."

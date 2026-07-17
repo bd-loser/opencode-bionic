@@ -153,16 +153,11 @@ XINCLI_CORE_VERSION=0.4.10 bash termux/rebuild-opencode.sh
 # 1. Verify the isolated opentui stack works (rules out opencode itself)
 bash termux/test-opentui-isolated.sh
 
-# 2. Check the environment
-echo "MEMTAG_OPTIONS=$MEMTAG_OPTIONS"          # must be 'off'
-echo "LD_PRELOAD=$LD_PRELOAD"                  # must contain libbun-android-fix.so
-file $PREFIX/bin/bun                            # must be 'shell script', NOT 'ELF'
-
-# 3. Check the .so
+# 2. Check the .so
 file node_modules/@xincli/opentui-core-android-arm64/libopentui.so
 # must be: ELF 64-bit LSB shared object, ARM aarch64
 
-# 4. Clean reinstall if node_modules is broken
+# 3. Clean reinstall if node_modules is broken
 bash termux/clean-reinstall.sh
 ```
 
@@ -215,7 +210,6 @@ These patches are Termux-specific (not opentui-related) and remain necessary:
 | Error | Cause | Fix |
 |---|---|---|
 | `opentui is not supported on the current platform: android-arm64` | Compiled binary can't load `.so` from bunfs | Update to `@xincli/opentui-core@0.4.10+` (has the bunfs extraction fix) |
-| `SIGABRT` / `Pointer tag for 0x... was truncated` | MTE heap tagging + FFI | Ensure `MEMTAG_OPTIONS=off` and `LD_PRELOAD` contains `libbun-android-fix.so` |
 | `Cannot find module '@ff-labs/fff-bun'` | Package has `os:` restriction, skipped on Android | Patch 1f handles this (lazy require + null guard) — run `apply-termux-patches.sh` |
 | `@opentui/core is @opentui/core (expected @xincli/opentui-core)` | Catalog pin not applied | Run `apply-termux-patches.sh`, then `bun install` again |
 | `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.11 --optional` |
@@ -225,7 +219,7 @@ These patches are Termux-specific (not opentui-related) and remain necessary:
 ## Related repositories
 
 - [bd-loser/opentui](https://github.com/bd-loser/opentui) — the opentui fork (publishes `@xincli/*` packages)
-- [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) — patched Bun for Termux (LD_PRELOAD shim, MTE fix)
+- [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) — patched Bun for Termux (Bionic/Android arm64)
 - [sst/opencode](https://github.com/sst/opencode) — upstream opencode
 - [sst/opentui](https://github.com/sst/opentui) — upstream opentui
 

@@ -75,22 +75,6 @@ command -v bun >/dev/null 2>&1 || fail "bun not found. Install bun-termux:
   curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash"
 ok "bun: $(bun --version)"
 
-# Verify bun is the launcher (not raw binary — FFI would crash during build)
-BUN_TYPE=$(file -b "$PREFIX/bin/bun" 2>/dev/null || echo "unknown")
-case "$BUN_TYPE" in
-  *ELF*) fail "$PREFIX/bin/bun is raw binary (ELF), not launcher. FFI will crash. Reinstall bun-termux." ;;
-esac
-ok "bun is the launcher script (not raw binary)"
-
-# Verify bun-termux shim
-SHIM="/data/data/com.termux/files/usr/lib/bun-termux/libbun-android-fix.so"
-if [ ! -f "$SHIM" ]; then
-  warn "bun-termux shim not found at $SHIM"
-  info "FFI may SIGABRT. Reinstall bun-termux if opencode crashes on startup."
-else
-  ok "bun-termux shim present"
-fi
-
 # =============================================================================
 # Step 2: Locate or clone opencode
 # =============================================================================
@@ -199,8 +183,6 @@ echo "  ${BLUE}4. Run opencode TUI:${NC}"
 echo "     opencode"
 echo ""
 echo "${MUTED}If opencode crashes on startup, check:${NC}"
-echo "${MUTED}  1. LD_PRELOAD contains libbun-android-fix.so${NC}"
-echo "${MUTED}  2. MEMTAG_OPTIONS=off is set${NC}"
-echo "${MUTED}  3. @xincli/opentui-core-android-arm64 is in node_modules/${NC}"
-echo "${MUTED}  4. The .so is ARM64 ELF:${NC}"
+echo "${MUTED}  1. @xincli/opentui-core-android-arm64 is in node_modules/${NC}"
+echo "${MUTED}  2. The .so is ARM64 ELF:${NC}"
 echo "${MUTED}     file node_modules/@xincli/opentui-core-android-arm64/libopentui.so${NC}"

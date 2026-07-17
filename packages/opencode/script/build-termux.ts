@@ -148,7 +148,7 @@ try {
   console.error(`Smoke test failed for ${name}:`, e)
   console.error("(The binary may still work — try running it directly)")
   // Don't exit 1 on smoke test failure — the binary might work despite
-  // the --version flag failing (e.g. if it needs LD_PRELOAD shim)
+  // --version failing (e.g. env-specific issues in the build sandbox).
 }
 
 // --- Write package.json for the binary --------------------------------------
