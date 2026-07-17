@@ -15,32 +15,63 @@ jobs:
 
       - name: Build inside termux-docker
         run: |
-          # --user root: termux-docker's default user is `system` (uid 1000),
-          # but actions/checkout writes files as the GHA runner (uid 1001), so
-          # the container user can't write to /workspace. Running as root inside
-          # termux is supported (pkg/bun read PREFIX+HOME from env, not uid) and
-          # is the simplest way to sidestep the uid mismatch — otherwise bun
-          # install fails with EACCES on the lockfile temp write and ENOENT on
-          # every symlink into node_modules.
+          # WHY WE DON'T BUILD ON THE BIND MOUNT:
+          # Two prior attempts (default user, then --user root) both failed with
+          #   EACCES: Permission denied: failed to create temporary file to save lockfile
+          #   ENOENT: failed to symlink/link package ... (thousands of these)
+          # The image's entrypoint drops privs to `system` regardless of --user,
+          # and even when it doesn't, bun's atomic-rename lockfile write across
+          # the bind mount is unreliable. So we do all real work inside the
+          # container's own filesystem ($BUILD_ROOT) and only copy the final
+          # binary back to /workspace for upload-artifact to pick up.
           docker run --rm \
-            --user root \
             -v "$GITHUB_WORKSPACE:/workspace" \
             -w /workspace \
             termux/termux-docker:aarch64 \
             bash -c '
               set -euo pipefail
+
+              echo "=== diag ==="
+              id || true
+              echo "HOME=$HOME PREFIX=${PREFIX:-unset}"
+              mount | grep -E "workspace|overlay" || true
+              (touch /workspace/.write_test && rm -f /workspace/.write_test && echo "workspace: WRITABLE") \
+                || echo "workspace: READ-ONLY for this user"
+              echo "==========="
+
               pkg update -y
-              pkg install -y git python curl dpkg
+              pkg install -y git python curl dpkg rsync
+
               curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
-              OPENCODE_ROOT=/workspace SKIP_SMOKE_TEST=1 bash termux/setup.sh
-              bash termux/build-opencode-termux.sh
-              file packages/opencode/dist/opencode-android-arm64/bin/opencode
-              ls -la packages/opencode/dist/opencode-android-arm64/bin/opencode
+
+              # Copy the checkout into a container-native path where bun install
+              # is guaranteed to work (real termux filesystem, not the bind mount).
+              BUILD_ROOT="$HOME/opencode"
+              mkdir -p "$BUILD_ROOT"
+              rsync -a --delete \
+                --exclude ".git" \
+                --exclude "node_modules" \
+                /workspace/ "$BUILD_ROOT/"
+
+              OPENCODE_ROOT="$BUILD_ROOT" SKIP_SMOKE_TEST=1 bash "$BUILD_ROOT/termux/setup.sh"
+              OPENCODE_ROOT="$BUILD_ROOT" bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
+
+              BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+              file "$BIN"
+              ls -la "$BIN"
+
+              # Publish the artifact into the mount so the runner can upload it.
+              # We only need to write ONE file, which minimizes exposure to
+              # whatever makes the mount cranky.
+              mkdir -p /workspace/artifact
+              cp "$BIN" /workspace/artifact/opencode
+              chmod 0644 /workspace/artifact/opencode
+              ls -la /workspace/artifact/
             '
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: opencode-android-arm64
-          path: packages/opencode/dist/opencode-android-arm64/bin/opencode
+          path: artifact/opencode
           if-no-files-found: error
