@@ -1,15 +1,25 @@
 name: watch-upstream
 
-# Polls sst/opencode for a new release every 2 days. If found, bumps
-# versions.json + syncs the workspace + commits + pushes to main, then
-# dispatches release.yml as a prerelease (auto-published, but marked
-# prerelease so users on `--tag latest` are not pulled onto an untested
-# upstream bump). Promote to stable by clearing the prerelease flag in
-# the GitHub Releases UI.
+# Polls anomalyco/opencode (fka sst/opencode) for new releases every 2
+# days. Two responsibilities:
+#
+# 1. Bump: if upstream has a version we haven't shipped, bump versions.json,
+#    commit to main, and dispatch release.yml. The dispatch mirrors
+#    upstream's `prerelease` flag verbatim — if upstream shipped it stable,
+#    we ship it stable; if upstream shipped it as a prerelease, so do we.
+#
+# 2. Promote: for tags we've already released, sync our `prerelease` flag
+#    to upstream's. Handles the case where upstream promoted a prerelease
+#    to stable (or demoted a stable to prerelease) after we mirrored it.
+#    Users on install.sh follow /releases/latest, which excludes prereleases,
+#    so promotion here is what actually moves users onto a new version.
+#
+# Inputs:
+#   dry_run         — report what would happen; don't commit or dispatch
+#   force_version   — force bump to this upstream version (skip auto-detect)
 
 on:
   schedule:
-    # 02:17 UTC every 2 days. Odd minute to avoid the top-of-hour thundering herd.
     - cron: "17 2 */2 * *"
   workflow_dispatch:
     inputs:
@@ -26,6 +36,10 @@ concurrency:
   group: watch-upstream
   cancel-in-progress: false
 
+env:
+  UPSTREAM: anomalyco/opencode
+  OURS: ${{ github.repository }}
+
 jobs:
   watch:
     runs-on: ubuntu-latest
@@ -36,14 +50,53 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          # Need the token attached to the checkout so subsequent `git push`
-          # goes through with the workflow's contents:write permission.
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.14
+
+      - name: Sync stability of existing releases
+        # Runs first, and unconditionally: even if no upstream bump is
+        # pending, our prerelease flags may drift from upstream (e.g.
+        # upstream promoted a version to stable after we mirrored it).
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          # Get last 20 of our releases and their prerelease flags.
+          gh release list --repo "$OURS" -L 20 \
+              --json tagName,isPrerelease,isDraft --jq '.[]' > ours.jsonl || true
+          if [ ! -s ours.jsonl ]; then
+            echo "no releases in $OURS yet; nothing to sync."
+            exit 0
+          fi
+          flipped=0
+          # Iterate deterministically. jq -c produces one JSON object per line.
+          while IFS= read -r row; do
+            tag="$(echo "$row" | jq -r .tagName)"
+            our_pre="$(echo "$row" | jq -r .isPrerelease)"
+            our_draft="$(echo "$row" | jq -r .isDraft)"
+            [ "$our_draft" = "true" ] && continue  # never touch drafts
+            # Look up upstream by exact tag. Missing → skip silently.
+            up_json="$(gh release view "$tag" --repo "$UPSTREAM" --json isPrerelease 2>/dev/null || true)"
+            [ -z "$up_json" ] && continue
+            up_pre="$(echo "$up_json" | jq -r .isPrerelease)"
+            if [ "$our_pre" != "$up_pre" ]; then
+              echo "  $tag: ours=prerelease:$our_pre upstream=prerelease:$up_pre → flipping"
+              if [ "${{ inputs.dry_run }}" = "true" ]; then
+                echo "    (dry-run: skipping edit)"
+              else
+                # gh release edit --prerelease is a tri-state:
+                #   --prerelease=true   → mark prerelease
+                #   --prerelease=false  → mark stable
+                gh release edit "$tag" --repo "$OURS" --prerelease="$up_pre"
+                flipped=$((flipped + 1))
+              fi
+            fi
+          done < ours.jsonl
+          echo "flipped $flipped release(s) to match upstream stability."
 
       - name: Detect upstream latest
         id: upstream
@@ -55,25 +108,26 @@ jobs:
           if [ -n "$FORCED" ]; then
             LATEST="${FORCED#v}"
             echo "using forced version: $LATEST"
+            # We don't know upstream's flag for a forced bump; look it up.
+            UP_PRE="$(gh release view "v$LATEST" --repo "$UPSTREAM" --json isPrerelease --jq .isPrerelease 2>/dev/null || echo false)"
           else
-            # Grab latest non-prerelease from sst/opencode. `gh release list`
-            # includes prereleases by default; use `--exclude-drafts` and
-            # filter with jq via `--json`.
-            # NB: sst/opencode was renamed to anomalyco/opencode circa 2026-07.
-            # GitHub redirects HTTP for the old slug, but the gh CLI does not
-            # always follow the redirect cleanly — target the current name.
-            LATEST_TAG="$(gh release list --repo anomalyco/opencode --exclude-drafts --exclude-pre-releases -L 1 --json tagName --jq '.[0].tagName')"
-            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
-              echo "error: could not resolve latest sst/opencode release" >&2
+            # Include prereleases: we mirror upstream's flag, so the newest
+            # tag wins regardless of stability. --exclude-drafts still applies.
+            row="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 1 --json tagName,isPrerelease --jq '.[0]')"
+            if [ -z "$row" ] || [ "$row" = "null" ]; then
+              echo "error: could not resolve latest $UPSTREAM release" >&2
               exit 1
             fi
+            LATEST_TAG="$(echo "$row" | jq -r .tagName)"
+            UP_PRE="$(echo "$row" | jq -r .isPrerelease)"
             LATEST="${LATEST_TAG#v}"
           fi
           CURRENT="$(jq -r '.opencode' versions.json)"
           echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
           echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "upstream_prerelease=$UP_PRE" >> "$GITHUB_OUTPUT"
           echo "current opencode-bionic pin: $CURRENT"
-          echo "latest sst/opencode release: $LATEST"
+          echo "latest $UPSTREAM release: $LATEST (prerelease=$UP_PRE)"
           if [ "$CURRENT" = "$LATEST" ]; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "no bump needed."
@@ -101,8 +155,8 @@ jobs:
           TAG: v${{ steps.upstream.outputs.latest }}
         run: |
           set -eu
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "error: release $TAG already exists in this repo. Delete it or bump manually." >&2
+          if gh release view "$TAG" --repo "$OURS" >/dev/null 2>&1; then
+            echo "error: release $TAG already exists in $OURS. Delete it or bump manually." >&2
             exit 1
           fi
 
@@ -116,30 +170,31 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add versions.json README.md package.json packages/opencode/package.json
-          # Some scripts also touch workspace package.json files under packages/**.
           git add -A -- packages
           git commit -m "chore(upstream): bump opencode $OLD → $NEW" \
-                     -m "Auto-bumped by watch-upstream.yml from sst/opencode."
+                     -m "Auto-bumped by watch-upstream.yml from $UPSTREAM."
           git push origin HEAD:main
 
-      - name: Dispatch release (prerelease)
+      - name: Dispatch release (mirror upstream stability)
         if: steps.upstream.outputs.changed == 'true' && inputs.dry_run != true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW: ${{ steps.upstream.outputs.latest }}
+          UP_PRE: ${{ steps.upstream.outputs.upstream_prerelease }}
         run: |
           set -eu
           gh workflow run release.yml \
             --ref main \
             -f version="$NEW" \
             -f draft=false \
-            -f prerelease=true
-          echo "dispatched release.yml for v$NEW (prerelease)"
+            -f prerelease="$UP_PRE"
+          echo "dispatched release.yml for v$NEW (prerelease=$UP_PRE)"
 
       - name: Dry-run summary
         if: steps.upstream.outputs.changed == 'true' && inputs.dry_run == true
         env:
           NEW: ${{ steps.upstream.outputs.latest }}
           OLD: ${{ steps.upstream.outputs.current }}
+          UP_PRE: ${{ steps.upstream.outputs.upstream_prerelease }}
         run: |
-          echo "DRY RUN: would bump $OLD → $NEW, commit to main, and dispatch release.yml as prerelease."
+          echo "DRY RUN: would bump $OLD → $NEW, commit to main, and dispatch release.yml with prerelease=$UP_PRE."
