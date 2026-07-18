@@ -14,99 +14,21 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build inside termux-docker
-        run: |
-          # /workspace is READ-ONLY for the container's `system` user
-          # (termux-docker's entrypoint drops privs regardless of --user).
-          # So we mount a SECOND directory that the runner pre-creates with
-          # world-writable perms — the container writes the artifact there,
-          # and the runner picks it up from the host side after docker exits.
-          mkdir -p "$GITHUB_WORKSPACE/../out"
-          OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
-          chmod 0777 "$OUT_HOST"
-          echo "OUT_HOST=$OUT_HOST"
-          docker run --rm \
-            -v "$GITHUB_WORKSPACE:/workspace" \
-            -v "$OUT_HOST:/out" \
-            -w /workspace \
-            termux/termux-docker:aarch64 \
-            bash -c '
-              set -euo pipefail
-
-              echo "=== diag ==="
-              id || true
-              echo "HOME=$HOME PREFIX=${PREFIX:-unset}"
-              mount | grep -E "workspace|overlay" || true
-              (touch /workspace/.write_test && rm -f /workspace/.write_test && echo "workspace: WRITABLE") \
-                || echo "workspace: READ-ONLY for this user"
-              echo "==========="
-
-              pkg update -y
-              pkg install -y git python curl dpkg rsync
-
-              curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
-
-              # Copy the checkout into a container-native path where bun install
-              # is guaranteed to work (real termux filesystem, not the bind mount).
-              BUILD_ROOT="$HOME/opencode"
-              mkdir -p "$BUILD_ROOT"
-              rsync -a --delete \
-                --exclude ".git" \
-                --exclude "node_modules" \
-                /workspace/ "$BUILD_ROOT/"
-
-              # Run bun install ourselves — the verifier in clean-reinstall.sh
-              # trips on monorepo installs (counts only top-level entries in
-              # ./node_modules and expects 1000+, but per-workspace hoisting
-              # legitimately leaves only ~15-20 there). Setting SKIP_REINSTALL=1
-              # tells setup.sh to trust the node_modules we produced here.
-              cd "$BUILD_ROOT"
-              bun install
-              cd -
-
-              OPENCODE_ROOT="$BUILD_ROOT" SKIP_REINSTALL=1 SKIP_SMOKE_TEST=1 bash "$BUILD_ROOT/termux/setup.sh"
-
-              # build-termux.ts (via packages/script/src/index.ts) calls
-              # `git branch --show-current` when neither OPENCODE_CHANNEL nor
-              # OPENCODE_VERSION is set. We rsynced without .git, so provide
-              # them explicitly so the version-detection branch skips git.
-              OPENCODE_ROOT="$BUILD_ROOT" \
-              OPENCODE_CHANNEL="dev" \
-              OPENCODE_VERSION="0.0.0-termux-ci" \
-                bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
-
-              # Enable command tracing for the artifact-publish tail so we get
-              # visibility if anything below silently exits.
-              echo "=== POST-BUILD: publishing artifact ==="
-              set -x
-
-              BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
-              test -f "$BIN"
-              test -x "$BIN" || chmod +x "$BIN"
-              ls -la "$BIN"
-
-              # /workspace is read-only for this container user; /out was
-              # bind-mounted from a world-writable host dir specifically for
-              # this handoff.
-              ls -la /out/ || true
-              cp "$BIN" /out/opencode
-              chmod 0644 /out/opencode
-              ls -la /out/
-              set +x
-              echo "=== POST-BUILD: done ==="
-            '
+        run: bash termux/ci/build-on-runner.sh
 
       - name: Stage artifact for upload
         run: |
           set -eux
           OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
-          ls -la "$OUT_HOST/" || true
           mkdir -p "$GITHUB_WORKSPACE/artifact"
           cp "$OUT_HOST/opencode" "$GITHUB_WORKSPACE/artifact/opencode"
-          ls -la "$GITHUB_WORKSPACE/artifact/"
+          cp "$OUT_HOST/opencode.sha256" "$GITHUB_WORKSPACE/artifact/opencode.sha256"
 
       - name: Upload binary
         uses: actions/upload-artifact@v4
         with:
           name: opencode-android-arm64
-          path: artifact/opencode
+          path: |
+            artifact/opencode
+            artifact/opencode.sha256
           if-no-files-found: error

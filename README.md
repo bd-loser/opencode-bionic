@@ -9,12 +9,45 @@
 [![opentui-js](https://img.shields.io/badge/opentui--js-@xincli%400.4.10-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)
 [![opentui-so](https://img.shields.io/badge/libopentui.so-@xincli%400.4.11-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core-android-arm64)
 
+## Install
+
+One-liner in Termux:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
+```
+
+This grabs the latest `.deb` from [Releases](https://github.com/bd-loser/opencode-bionic/releases),
+verifies its checksum, and installs it via `dpkg`. Pin a version with
+`OPENCODE_VERSION=1.18.2 curl … | bash`.
+
+Manual install:
+
+```bash
+curl -LO https://github.com/bd-loser/opencode-bionic/releases/latest/download/opencode_<version>_aarch64.deb
+dpkg -i opencode_<version>_aarch64.deb
+opencode --version
+```
+
 ## Status
 
 ✅ **Working.** Both `bun run` (dev mode) and the compiled `opencode` binary
 launch the TUI on Termux/Android arm64. The `0.4.10` release fixed the
 compiled-binary crash (`.so` extraction from bunfs), and `0.4.11` refreshes
 the native `libopentui.so` build.
+
+## Bundled versions
+
+Everything is pinned in [`versions.json`](./versions.json) at the repo root.
+Bump that file and run `bun termux/ci/versions.ts apply` to sync every
+consumer package.json. CI's release workflow reads the same file.
+
+| Component | Version |
+|---|---|
+| opencode (upstream) | `1.18.2` |
+| `@opentui/{core,keymap,solid}` (JS, via `@xincli`) | `0.4.10` |
+| `@xincli/opentui-core-android-arm64` (native `.so`) | `0.4.11` |
+| `bun-termux` runtime | tracked at [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) |
 
 ## Why this fork exists
 

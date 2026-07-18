@@ -1,0 +1,126 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (blank = use versions.json)"
+        required: false
+        default: ""
+      draft:
+        description: "Create as draft release"
+        type: boolean
+        default: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Resolve version
+        id: version
+        run: |
+          set -eu
+          INPUT_VERSION="${{ github.event.inputs.version }}"
+          if [ -n "$INPUT_VERSION" ]; then
+            VERSION="${INPUT_VERSION#v}"
+          else
+            VERSION="$(bun termux/ci/versions.ts print | grep '^OPENCODE_VERSION=' | cut -d= -f2)"
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "error: could not determine version" >&2
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Releasing v$VERSION"
+
+      - name: Verify tag is unused
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "error: release $TAG already exists. Bump versions.json or delete the release first." >&2
+            exit 1
+          fi
+
+      - name: Apply pinned versions
+        run: bun termux/ci/versions.ts apply
+
+      - name: Confirm versions match
+        run: bun termux/ci/versions.ts check
+
+      - name: Build inside termux-docker
+        env:
+          OPENCODE_VERSION: ${{ steps.version.outputs.version }}
+          OPENCODE_CHANNEL: stable
+        run: bash termux/ci/build-on-runner.sh
+
+      - name: Package .deb
+        id: pkg
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -eux
+          OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          DEB="$(bash termux/ci/package-deb.sh "$OUT_HOST/opencode" "$VERSION" "$GITHUB_WORKSPACE/dist")"
+          cp "$OUT_HOST/opencode" "$GITHUB_WORKSPACE/dist/opencode"
+          ( cd "$GITHUB_WORKSPACE/dist" && sha256sum opencode "opencode_${VERSION}_aarch64.deb" > SHA256SUMS )
+          ls -la "$GITHUB_WORKSPACE/dist/"
+          echo "deb=$DEB" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          DRAFT: ${{ github.event.inputs.draft }}
+        run: |
+          set -eu
+          DRAFT_FLAG=""
+          if [ "$DRAFT" = "true" ]; then DRAFT_FLAG="--draft"; fi
+          NOTES_FILE="$RUNNER_TEMP/release-notes.md"
+          cat > "$NOTES_FILE" <<EOF
+          opencode v$VERSION — Termux/Bionic aarch64 build.
+
+          Install:
+
+          \`\`\`
+          curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
+          \`\`\`
+
+          Or manually:
+
+          \`\`\`
+          curl -LO https://github.com/${{ github.repository }}/releases/download/$TAG/opencode_${VERSION}_aarch64.deb
+          dpkg -i opencode_${VERSION}_aarch64.deb
+          \`\`\`
+
+          Files:
+          - \`opencode_${VERSION}_aarch64.deb\` — Termux package
+          - \`opencode\` — raw aarch64 ELF binary (for advanced use)
+          - \`SHA256SUMS\` — checksums
+
+          Bundled versions:
+          - opencode: v$VERSION
+          - @opentui/*: $(bun termux/ci/versions.ts print | grep OPENTUI_CORE= | cut -d= -f2)
+          EOF
+          gh release create "$TAG" $DRAFT_FLAG \
+            --title "v$VERSION" \
+            --notes-file "$NOTES_FILE" \
+            dist/opencode_${VERSION}_aarch64.deb \
+            dist/opencode \
+            dist/SHA256SUMS
