@@ -1,0 +1,145 @@
+name: watch-upstream
+
+# Polls sst/opencode for a new release every 2 days. If found, bumps
+# versions.json + syncs the workspace + commits + pushes to main, then
+# dispatches release.yml as a prerelease (auto-published, but marked
+# prerelease so users on `--tag latest` are not pulled onto an untested
+# upstream bump). Promote to stable by clearing the prerelease flag in
+# the GitHub Releases UI.
+
+on:
+  schedule:
+    # 02:17 UTC every 2 days. Odd minute to avoid the top-of-hour thundering herd.
+    - cron: "17 2 */2 * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Report what would happen, but don't commit or dispatch."
+        type: boolean
+        default: false
+      force_version:
+        description: "Force bump to this upstream version (leave blank to auto-detect)."
+        type: string
+        default: ""
+
+concurrency:
+  group: watch-upstream
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Need the token attached to the checkout so subsequent `git push`
+          # goes through with the workflow's contents:write permission.
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Detect upstream latest
+        id: upstream
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCED: ${{ inputs.force_version }}
+        run: |
+          set -eu
+          if [ -n "$FORCED" ]; then
+            LATEST="${FORCED#v}"
+            echo "using forced version: $LATEST"
+          else
+            # Grab latest non-prerelease from sst/opencode. `gh release list`
+            # includes prereleases by default; use `--exclude-drafts` and
+            # filter with jq via `--json`.
+            # NB: sst/opencode was renamed to anomalyco/opencode circa 2026-07.
+            # GitHub redirects HTTP for the old slug, but the gh CLI does not
+            # always follow the redirect cleanly — target the current name.
+            LATEST_TAG="$(gh release list --repo anomalyco/opencode --exclude-drafts --exclude-pre-releases -L 1 --json tagName --jq '.[0].tagName')"
+            if [ -z "$LATEST_TAG" ] || [ "$LATEST_TAG" = "null" ]; then
+              echo "error: could not resolve latest sst/opencode release" >&2
+              exit 1
+            fi
+            LATEST="${LATEST_TAG#v}"
+          fi
+          CURRENT="$(jq -r '.opencode' versions.json)"
+          echo "current=$CURRENT" >> "$GITHUB_OUTPUT"
+          echo "latest=$LATEST" >> "$GITHUB_OUTPUT"
+          echo "current opencode-bionic pin: $CURRENT"
+          echo "latest sst/opencode release: $LATEST"
+          if [ "$CURRENT" = "$LATEST" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "no bump needed."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump versions.json
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          NEW: ${{ steps.upstream.outputs.latest }}
+        run: |
+          set -eu
+          jq --arg v "$NEW" '.opencode = $v' versions.json > versions.json.new
+          mv versions.json.new versions.json
+          bun termux/ci/versions.ts apply
+          bun termux/ci/versions.ts check
+          echo "diff:"
+          git --no-pager diff --stat
+
+      - name: Verify tag is unused
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: v${{ steps.upstream.outputs.latest }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "error: release $TAG already exists in this repo. Delete it or bump manually." >&2
+            exit 1
+          fi
+
+      - name: Commit + push (skipped on dry_run)
+        if: steps.upstream.outputs.changed == 'true' && inputs.dry_run != true
+        env:
+          NEW: ${{ steps.upstream.outputs.latest }}
+          OLD: ${{ steps.upstream.outputs.current }}
+        run: |
+          set -eu
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add versions.json README.md package.json packages/opencode/package.json
+          # Some scripts also touch workspace package.json files under packages/**.
+          git add -A -- packages
+          git commit -m "chore(upstream): bump opencode $OLD → $NEW" \
+                     -m "Auto-bumped by watch-upstream.yml from sst/opencode."
+          git push origin HEAD:main
+
+      - name: Dispatch release (prerelease)
+        if: steps.upstream.outputs.changed == 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW: ${{ steps.upstream.outputs.latest }}
+        run: |
+          set -eu
+          gh workflow run release.yml \
+            --ref main \
+            -f version="$NEW" \
+            -f draft=false \
+            -f prerelease=true
+          echo "dispatched release.yml for v$NEW (prerelease)"
+
+      - name: Dry-run summary
+        if: steps.upstream.outputs.changed == 'true' && inputs.dry_run == true
+        env:
+          NEW: ${{ steps.upstream.outputs.latest }}
+          OLD: ${{ steps.upstream.outputs.current }}
+        run: |
+          echo "DRY RUN: would bump $OLD → $NEW, commit to main, and dispatch release.yml as prerelease."

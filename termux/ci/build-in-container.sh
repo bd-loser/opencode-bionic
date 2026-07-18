@@ -15,6 +15,13 @@
 
 set -euo pipefail
 
+# termux-docker's entrypoint strips inherited env when switching to the
+# `system` user, so build-on-runner.sh drops the real values into an env
+# file on /out. Source it if present; fall back to conservative defaults.
+if [ -f /out/build-env.sh ]; then
+  # shellcheck disable=SC1091
+  . /out/build-env.sh
+fi
 OPENCODE_VERSION="${OPENCODE_VERSION:-0.0.0-termux-ci}"
 OPENCODE_CHANNEL="${OPENCODE_CHANNEL:-dev}"
 

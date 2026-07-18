@@ -49,6 +49,10 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=ci/versions.sh
+. "$SCRIPT_DIR/ci/versions.sh"
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
@@ -90,19 +94,19 @@ cd "$TEST_DIR"
 # Clean v2 approach: all @xincli packages published at 0.4.10, so we use
 # npm: aliases directly. No overrides needed — @xincli/opentui-solid
 # directly depends on @xincli/opentui-core in its own dependencies.
-cat > package.json <<'EOF'
+cat > package.json <<EOF
 {
   "name": "opentui-test",
   "version": "1.0.0",
   "type": "module",
   "private": true,
   "dependencies": {
-    "@opentui/core": "npm:@xincli/opentui-core@0.4.10",
-    "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10",
+    "@opentui/core": "npm:@xincli/opentui-core@${XINCLI_CORE_VERSION}",
+    "@opentui/solid": "npm:@xincli/opentui-solid@${XINCLI_SOLID_VERSION}",
     "solid-js": "1.9.10"
   },
   "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.10"
+    "@xincli/opentui-core-android-arm64": "${XINCLI_ANDROID_VERSION}"
   }
 }
 EOF
@@ -154,7 +158,7 @@ if [ -f "$SO_PATH" ]; then
 else
   fail "libopentui.so not found at $SO_PATH"
   echo "The optionalDependency didn't install. Try:" >&2
-  echo "  bun add @xincli/opentui-core-android-arm64@0.4.10" >&2
+  echo "  bun add @xincli/opentui-core-android-arm64@${XINCLI_ANDROID_VERSION}" >&2
   exit 1
 fi
 

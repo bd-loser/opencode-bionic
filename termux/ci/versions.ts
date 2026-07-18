@@ -17,7 +17,13 @@ const ROOT_PKG = path.join(ROOT, "package.json")
 
 type Versions = {
   opencode: string
-  opentui: { core: string; keymap: string; solid: string; androidArm64Native: string }
+  opentui: {
+    core: string
+    keymap: string
+    solid: string
+    react: string
+    androidArm64Native: string
+  }
   bunTermux: { installUrl: string }
 }
 
@@ -162,6 +168,32 @@ async function applyOpentuiWorkspaces(): Promise<number> {
   return changed
 }
 
+function applyReadme(): boolean {
+  const README = path.join(ROOT, "README.md")
+  const orig = readFileSync(README, "utf8")
+  const badges =
+    `[![opentui-js](https://img.shields.io/badge/opentui--js-@xincli%40${versions.opentui.core}-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)\n` +
+    `[![opentui-so](https://img.shields.io/badge/libopentui.so-@xincli%40${versions.opentui.androidArm64Native}-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core-android-arm64)`
+  const table =
+    `| Component | Version |\n` +
+    `|---|---|\n` +
+    `| opencode (upstream) | \`${versions.opencode}\` |\n` +
+    `| \`@opentui/{core,keymap,solid}\` (JS, via \`@xincli\`) | \`${versions.opentui.core}\` |\n` +
+    `| \`@xincli/opentui-core-android-arm64\` (native \`.so\`) | \`${versions.opentui.androidArm64Native}\` |\n` +
+    `| \`bun-termux\` runtime | tracked at [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) |`
+  let out = orig.replace(
+    /<!-- versions:badges -->[\s\S]*?<!-- \/versions:badges -->/,
+    `<!-- versions:badges -->\n${badges}\n<!-- /versions:badges -->`,
+  )
+  out = out.replace(
+    /<!-- versions:table -->[\s\S]*?<!-- \/versions:table -->/,
+    `<!-- versions:table -->\n${table}\n<!-- /versions:table -->`,
+  )
+  if (out === orig) return false
+  writeFileSync(README, out)
+  return true
+}
+
 async function main() {
   const mode = process.argv[2] ?? "check"
 
@@ -170,6 +202,7 @@ async function main() {
     console.log(`OPENTUI_CORE=${versions.opentui.core}`)
     console.log(`OPENTUI_KEYMAP=${versions.opentui.keymap}`)
     console.log(`OPENTUI_SOLID=${versions.opentui.solid}`)
+    console.log(`OPENTUI_REACT=${versions.opentui.react}`)
     console.log(`OPENTUI_NATIVE_ANDROID_ARM64=${versions.opentui.androidArm64Native}`)
     console.log(`BUN_TERMUX_INSTALL_URL=${versions.bunTermux.installUrl}`)
     return
@@ -194,10 +227,11 @@ async function main() {
   if (mode === "apply") {
     for (const c of drifted) c.fix?.()
     const wsChanged = await applyOpentuiWorkspaces()
+    const readmeChanged = applyReadme()
     console.log(
       drifted.length
-        ? `\nApplied ${drifted.length} fix(es) + refreshed ${wsChanged} workspace package.json file(s)`
-        : `\nNothing to fix; refreshed ${wsChanged} workspace package.json file(s)`,
+        ? `\nApplied ${drifted.length} fix(es) + refreshed ${wsChanged} workspace package.json file(s)${readmeChanged ? " + README.md" : ""}`
+        : `\nNothing to fix; refreshed ${wsChanged} workspace package.json file(s)${readmeChanged ? " + README.md" : ""}`,
     )
     return
   }

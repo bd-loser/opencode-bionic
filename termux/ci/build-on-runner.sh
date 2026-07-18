@@ -27,11 +27,21 @@ OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
 chmod 0777 "$OUT_HOST"
 echo "OUT_HOST=$OUT_HOST" >&2
 
-# Forward version/channel through docker env; empty values are fine, the
-# container script has defaults.
+# termux-docker's entrypoint runs `su system` (or equivalent) to drop privs,
+# which strips inherited env vars. `docker run -e FOO=bar` does NOT survive
+# that switch. Confirmed in run 29643862045: runner had OPENCODE_VERSION=1.18.2
+# but inside the container it fell back to the script default 0.0.0-termux-ci,
+# and the released binary reported the wrong version.
+#
+# Workaround: write an env file to /out (which is bind-mounted read/write and
+# survives the user switch), and have build-in-container.sh source it.
+cat > "$OUT_HOST/build-env.sh" <<EOF
+export OPENCODE_VERSION='${OPENCODE_VERSION:-}'
+export OPENCODE_CHANNEL='${OPENCODE_CHANNEL:-}'
+EOF
+chmod 0644 "$OUT_HOST/build-env.sh"
+
 docker run --rm \
-  -e "OPENCODE_VERSION=${OPENCODE_VERSION:-}" \
-  -e "OPENCODE_CHANNEL=${OPENCODE_CHANNEL:-}" \
   -v "$GITHUB_WORKSPACE:/workspace" \
   -v "$OUT_HOST:/out" \
   -w /workspace \

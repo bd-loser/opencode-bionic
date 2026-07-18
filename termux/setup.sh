@@ -52,7 +52,9 @@ header(){ echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── Default config ───────────────────────────────────────────────────────────
-XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
+# Version pins come from versions.json (single source of truth).
+# shellcheck source=ci/versions.sh
+. "$SCRIPT_DIR/ci/versions.sh"
 
 # =============================================================================
 # Step 1: Verify Termux environment

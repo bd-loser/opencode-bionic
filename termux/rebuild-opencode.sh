@@ -46,14 +46,10 @@ header(){ echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ── @xincli target versions ──────────────────────────────────────────────────
-# Each var is independently overridable. Individual per-package versions
-# matter when the .so lags/leads the JS packages (e.g. android-arm64@0.4.11
-# fix while core is still on 0.4.10).
-XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
-XINCLI_SOLID_VERSION="${XINCLI_SOLID_VERSION:-$XINCLI_CORE_VERSION}"
-XINCLI_KEYMAP_VERSION="${XINCLI_KEYMAP_VERSION:-$XINCLI_CORE_VERSION}"
-XINCLI_REACT_VERSION="${XINCLI_REACT_VERSION:-$XINCLI_CORE_VERSION}"
-XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.11}"
+# Sourced from versions.json (single source of truth). Individual env
+# overrides win — the sourcer only fills in unset variables.
+# shellcheck source=ci/versions.sh
+. "$SCRIPT_DIR/ci/versions.sh"
 
 # ── Parse args ───────────────────────────────────────────────────────────────
 DO_PULL=true
@@ -133,13 +129,13 @@ info "Removing @xincli / @opentui top-level symlinks..."
 rm -rf "$OPENCODE_ROOT/node_modules/@xincli" 2>/dev/null || true
 rm -rf "$OPENCODE_ROOT/node_modules/@opentui" 2>/dev/null || true
 
-# Sweep stale .bun store dirs for @xincli packages.
-# Target versions come from the patch script's env vars.
-TARGET_CORE="${XINCLI_CORE_VERSION:-0.4.10}"
-TARGET_SOLID="${XINCLI_SOLID_VERSION:-0.4.10}"
-TARGET_KEYMAP="${XINCLI_KEYMAP_VERSION:-0.4.10}"
-TARGET_REACT="${XINCLI_REACT_VERSION:-0.4.10}"
-TARGET_ANDROID="${XINCLI_ANDROID_VERSION:-0.4.11}"
+# Sweep stale .bun store dirs for @xincli packages. Target versions were
+# populated from versions.json at the top of this script.
+TARGET_CORE="$XINCLI_CORE_VERSION"
+TARGET_SOLID="$XINCLI_SOLID_VERSION"
+TARGET_KEYMAP="$XINCLI_KEYMAP_VERSION"
+TARGET_REACT="$XINCLI_REACT_VERSION"
+TARGET_ANDROID="$XINCLI_ANDROID_VERSION"
 
 sweep_stale_store() {
   # $1 = package short name (e.g. "opentui-core")

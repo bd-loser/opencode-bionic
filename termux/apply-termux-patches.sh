@@ -80,15 +80,19 @@
 set -euo pipefail
 
 # --- Config ------------------------------------------------------------------
-# Version 0.4.9 fixes the compiled binary crash (bunfs .so extraction).
-# It also publishes @xincli/opentui-solid and @xincli/opentui-keymap,
-# which means we no longer need the `overrides` hack — we can use
-# clean catalog pins with npm: aliases instead.
-XINCLI_CORE_VERSION="${XINCLI_CORE_VERSION:-0.4.10}"
-XINCLI_ANDROID_VERSION="${XINCLI_ANDROID_VERSION:-0.4.11}"
-XINCLI_REACT_VERSION="${XINCLI_REACT_VERSION:-0.4.10}"
-XINCLI_SOLID_VERSION="${XINCLI_SOLID_VERSION:-0.4.10}"
-XINCLI_KEYMAP_VERSION="${XINCLI_KEYMAP_VERSION:-0.4.10}"
+# All XINCLI_*_VERSION values come from versions.json at the repo root (the
+# single source of truth). Set env vars before invoking this script to override
+# for local experiments — those wins because versions.sh only sets defaults.
+# shellcheck source=ci/versions.sh
+. "$(dirname "$0")/ci/versions.sh"
+
+for v in XINCLI_CORE_VERSION XINCLI_ANDROID_VERSION XINCLI_REACT_VERSION \
+         XINCLI_SOLID_VERSION XINCLI_KEYMAP_VERSION; do
+  if [ -z "${!v:-}" ]; then
+    echo "error: $v is not set. Run from the opencode-bionic repo (versions.json missing?) or export $v manually." >&2
+    exit 1
+  fi
+done
 PATCH_MARKER="opencode-bionic-patched"
 
 # Colors

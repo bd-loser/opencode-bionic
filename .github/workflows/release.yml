@@ -8,7 +8,23 @@ on:
         required: false
         default: ""
       draft:
-        description: "Create as draft release"
+        description: "Create as draft release (safer default; publish manually)"
+        type: boolean
+        default: true
+      prerelease:
+        description: "Mark as prerelease (upstream watcher uses this)"
+        type: boolean
+        default: false
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      draft:
+        type: boolean
+        default: true
+      prerelease:
         type: boolean
         default: false
 
@@ -29,9 +45,10 @@ jobs:
 
       - name: Resolve version
         id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
           set -eu
-          INPUT_VERSION="${{ github.event.inputs.version }}"
           if [ -n "$INPUT_VERSION" ]; then
             VERSION="${INPUT_VERSION#v}"
           else
@@ -87,11 +104,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
-          DRAFT: ${{ github.event.inputs.draft }}
+          DRAFT: ${{ inputs.draft }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -eu
-          DRAFT_FLAG=""
-          if [ "$DRAFT" = "true" ]; then DRAFT_FLAG="--draft"; fi
+          FLAGS=""
+          if [ "$DRAFT" = "true" ]; then FLAGS="$FLAGS --draft"; fi
+          if [ "$PRERELEASE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
           cat > "$NOTES_FILE" <<EOF
           opencode v$VERSION — Termux/Bionic aarch64 build.
@@ -118,7 +137,9 @@ jobs:
           - opencode: v$VERSION
           - @opentui/*: $(bun termux/ci/versions.ts print | grep OPENTUI_CORE= | cut -d= -f2)
           EOF
-          gh release create "$TAG" $DRAFT_FLAG \
+          # $FLAGS is intentionally word-split (--draft / --prerelease).
+          # shellcheck disable=SC2086
+          gh release create "$TAG" $FLAGS \
             --title "v$VERSION" \
             --notes-file "$NOTES_FILE" \
             dist/opencode_${VERSION}_aarch64.deb \
