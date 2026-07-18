@@ -1,10 +1,11 @@
 {
   "$schema": "./versions.schema.json",
-  "opencode": "1.18.2",
+  "opencode": "1.18.3",
   "opentui": {
     "core": "0.4.10",
     "keymap": "0.4.10",
     "solid": "0.4.10",
+    "react": "0.4.10",
     "androidArm64Native": "0.4.11"
   },
   "bunTermux": {

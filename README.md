@@ -6,8 +6,10 @@
 
 [![Termux](https://img.shields.io/badge/Platform-Termux%20Android%20arm64-black.svg)](https://termux.dev)
 [![Bun](https://img.shields.io/badge/Bun-1.3.14%20(bd--loser%20fork)-blue.svg)](https://github.com/bd-loser/bun-termux)
+<!-- versions:badges -->
 [![opentui-js](https://img.shields.io/badge/opentui--js-@xincli%400.4.10-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)
 [![opentui-so](https://img.shields.io/badge/libopentui.so-@xincli%400.4.11-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core-android-arm64)
+<!-- /versions:badges -->
 
 ## Install
 
@@ -42,12 +44,14 @@ Everything is pinned in [`versions.json`](./versions.json) at the repo root.
 Bump that file and run `bun termux/ci/versions.ts apply` to sync every
 consumer package.json. CI's release workflow reads the same file.
 
+<!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `1.18.2` |
+| opencode (upstream) | `1.18.3` |
 | `@opentui/{core,keymap,solid}` (JS, via `@xincli`) | `0.4.10` |
 | `@xincli/opentui-core-android-arm64` (native `.so`) | `0.4.11` |
 | `bun-termux` runtime | tracked at [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) |
+<!-- /versions:table -->
 
 ## Why this fork exists
 
