@@ -1,45 +1,89 @@
-# opencode-bionic — opencode for Android/Termux
+# opencode-bionic — Termux/Android build system
 
-> Fork of [sst/opencode](https://github.com/sst/opencode) that runs on
-> Android/Termux under the patched [bun-termux](https://github.com/bd-loser/bun-termux)
-> with [@xincli/opentui-*](https://www.npmjs.com/~xincli) native bindings.
+Fork architecture for shipping [anomalyco/opencode](https://github.com/anomalyco/opencode)
+(fka `sst/opencode`) on Android/Termux, using [bun-termux](https://github.com/bd-loser/bun-termux)
+and [@xincli/opentui-*](https://www.npmjs.com/~xincli).
 
-## Architecture (v2 — clean catalog pins)
+## The delta
+
+Upstream opencode has no Android support: its opentui native bindings only
+resolve `darwin`/`linux`/`win32`, and the linux binary is glibc — Bionic
+rejects it. Our fork adds Termux support with a small, well-scoped delta:
+
+| Kind | File | How it's expressed |
+|---|---|---|
+| Source | `bunfig.toml` | patch — adds `@xincli/*` to `minimumReleaseAgeExcludes` |
+| Source (new file) | `packages/opencode/script/build-termux.ts` | patch — the compile script (embeds bun-termux, targets aarch64) |
+| Source | `packages/core/src/filesystem/fff.bun.ts` | patch — lazy-load `@ff-labs/fff-bun` (no Android binary; falls back to ripgrep) |
+| Config | `package.json` (root) | `versions.ts` — catalog aliases, `optionalDependencies`, remove `postinstall`/`prepare`/`trustedDeps`/fff-bun patch entry |
+| Config | `packages/plugin/package.json` | `versions.ts` — bump version + `peerDependencies` |
+
+Split rationale: **patches** are shape-fragile but greppable — if upstream
+renames `fff.bun.ts`, `git am` fails loudly. **`versions.ts`** applies
+JSON edits semantically — resilient to reformatting, and re-emits the
+correct values on version bumps.
+
+## Directory layout
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  npm registry                                                   │
-│                                                                 │
-│  @xincli/opentui-core@0.4.10              ← compiled JS core     │
-│  @xincli/opentui-react@0.4.10             ← React reconciler     │
-│  @xincli/opentui-solid@0.4.10             ← SolidJS binding      │
-│  @xincli/opentui-keymap@0.4.10            ← keymap utilities     │
-│  @xincli/opentui-core-android-arm64@0.4.11 ← native .so (12 MB)  │
-│                                                                 │
-│  Note: JS packages and the .so are versioned independently.     │
-│  The .so is on 0.4.11 to pick up a native-build fix while the   │
-│  JS packages remain on 0.4.10.                                  │
-└─────────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ npm: aliases in catalog
-                              │
-┌─────────────────────────────────────────────────────────────────┐
-│  opencode (this fork)                                           │
-│                                                                 │
-│  package.json:                                                  │
-│    workspaces.catalog:                                          │
-│      "@opentui/core":  "npm:@xincli/opentui-core@0.4.10"         │
-│      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10"        │
-│      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.10"       │
-│    optionalDependencies:                                        │
-│      "@xincli/opentui-core-android-arm64": "0.4.11"              │
-│                                                                 │
-│  No overrides needed — @xincli packages directly depend on      │
-│  each other via npm: aliases in their own dependencies.         │
-└─────────────────────────────────────────────────────────────────┘
+opencode-bionic/                   ← this repo
+├── README.md                      ← top-level docs
+├── LICENSE
+├── install.sh                     ← one-liner for end users (curl | bash)
+├── versions.json                  ← single source of truth for all pins
+├── .github/workflows/
+│   ├── release.yml                ← manual dispatch → build + publish .deb
+│   └── watch-upstream.yml         ← cron: detect upstream, bump, dispatch release
+└── termux/
+    ├── README.md                  ← this file
+    ├── patches/                   ← quilt-style unified diffs
+    │   ├── 0001-termux-add-xincli-to-minimumReleaseAgeExcludes.patch
+    │   ├── 0002-termux-add-build-termux.ts-compile-script.patch
+    │   └── 0003-termux-lazy-load-ff-labs-fff-bun.patch
+    ├── ci/                        ← build pipeline
+    │   ├── versions.ts            ← config-delta applier; canonical version parser
+    │   ├── versions.sh            ← same, but sourceable by bash scripts
+    │   ├── fetch-upstream.sh      ← clones anomalyco/opencode at a pinned tag
+    │   ├── apply-patches.sh       ← git am --3way termux/patches/*.patch
+    │   ├── refresh-patches.sh     ← regenerates patches from a build tree
+    │   ├── prepare-build-tree.sh  ← chains fetch + versions + apply
+    │   ├── build-on-runner.sh     ← GitHub Actions entrypoint (spawns docker)
+    │   ├── build-in-container.sh  ← runs inside termux-docker; produces the binary
+    │   └── package-deb.sh         ← wraps the binary into a .deb
+    ├── setup.sh                   ← local dev bootstrap
+    ├── rebuild-opencode.sh        ← local rebuild + reinstall
+    ├── build-opencode-termux.sh   ← invokes bun build --compile
+    ├── clean-reinstall.sh         ← nuke node_modules and reinstall
+    ├── install-opencode-termux.sh ← copy binary to $PREFIX
+    ├── run-opencode-termux.sh     ← dev-mode launcher (bun run)
+    ├── release-opentui.sh         ← publish @xincli npm packages
+    └── test-opentui-isolated.sh   ← smoke test the native binding
 ```
 
-## Quick Start (on your Termux phone)
+The repo holds ~30 files. Upstream is fetched fresh at build time — we
+never carry a stale copy in the working tree.
+
+## Build flow
+
+Same pipeline for local dev and CI:
+
+```
+BUILD_DIR=/some/scratch/dir
+bash termux/ci/prepare-build-tree.sh "$BUILD_DIR"    # fetch + config + patches
+cd "$BUILD_DIR"
+bun install
+bun packages/opencode/script/build-termux.ts         # produces the binary
+```
+
+`prepare-build-tree.sh` internally runs:
+
+1. `fetch-upstream.sh` — `git clone --depth 1 -b v$(jq .opencode versions.json) anomalyco/opencode`
+2. `bun termux/ci/versions.ts apply --target $BUILD_DIR` — apply config delta
+3. `apply-patches.sh` — `git am --3way termux/patches/*.patch`
+
+Any of those failing aborts loudly — no half-patched trees.
+
+## Local dev (on your Termux phone)
 
 ```bash
 # 1. Prerequisites (one-time)
@@ -48,181 +92,117 @@ pkg install git python build-essential clang make
 
 # Install patched bun-termux
 curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
-bun --version  # should print 1.3.14
+bun --version   # should print 1.3.14
 
 # 2. Clone this fork
 git clone https://github.com/bd-loser/opencode-bionic.git ~/opencode-bionic
 cd ~/opencode-bionic
 
-# 3. One-command setup (clones opencode, installs deps, patches, smoke test)
+# 3. Bootstrap: prepares a build tree at ~/opencode and runs bun install
 bash termux/setup.sh
 
-# 4. Run opencode (dev mode — uses bun run)
-bash termux/run-opencode-termux.sh
-
-# 5. Build + install compiled binary (one command)
+# 4. Build + install
 bash termux/rebuild-opencode.sh
-
-# 6. Run from anywhere
-opencode
 opencode --version
-opencode run 'hello world'
 ```
 
-## Script Reference
+`setup.sh` reads `versions.json` and always builds the pinned upstream
+version. To rebuild after a version bump, run `rebuild-opencode.sh`
+again — it re-runs `prepare-build-tree.sh` to a fresh tree.
 
-### User-facing scripts (the ones you'll actually run)
+## Refreshing patches (when upstream drifts)
 
-| Script | Purpose | When to run |
-|---|---|---|
-| `setup.sh` | One-command setup: clone opencode, install deps, patch, smoke test | First time, or after a clean checkout |
-| `rebuild-opencode.sh` | Pull latest, re-patch, re-install, build binary, install | After a new `@xincli` release, or after opencode upstream changes |
-| `run-opencode-termux.sh` | Run opencode in dev mode (`bun run`) | Quick iteration, debugging |
-| `release-opentui.sh` | Orchestrate publishing all 5 `@xincli` packages | When you bump versions in the opentui fork |
-
-### Internal scripts (called by the above)
-
-| Script | Purpose |
-|---|---|
-| `apply-termux-patches.sh` | Apply clean v2 catalog pins + other Termux patches (idempotent) |
-| `clean-reinstall.sh` | Nuke `node_modules` + `bun.lock`, fresh install, verify |
-| `build-opencode-termux.sh` | Compile opencode into a single binary (`bun build --compile`) |
-| `install-opencode-termux.sh` | Copy binary to `$PREFIX/lib/opencode/`, create wrapper at `$PREFIX/bin/opencode` |
-| `test-opentui-isolated.sh` | Smoke test: verify `@xincli/opentui-core` + `@xincli/opentui-solid` work on Termux |
-| `setup-opencode-termux.sh` | Legacy setup script (use `setup.sh` instead) |
-
-## Common Workflows
-
-### After a new @xincli release
-
-`rebuild-opencode.sh` accepts independent version overrides per package,
-because the JS packages and the native `.so` can move at different
-cadences (e.g. `.so`-only rebuilds).
+If `git am --3way` starts failing after an upstream bump — typically
+because upstream renamed a file we patch — refresh the patches:
 
 ```bash
-cd ~/opencode-bionic
-git pull
+# 1. Prepare a build tree; apply-patches will fail, leaving mid-am state
+bash termux/ci/prepare-build-tree.sh /tmp/refresh
 
-# Use whatever the script's built-in defaults are (currently core=0.4.10, so=0.4.11)
-bash termux/rebuild-opencode.sh
-
-# Override just the .so version (e.g. after a native-only rebuild)
-XINCLI_ANDROID_VERSION=0.4.12 bash termux/rebuild-opencode.sh
-
-# Bump the whole JS stack in one shot (core → also sets solid/keymap/react)
-XINCLI_CORE_VERSION=0.4.11 bash termux/rebuild-opencode.sh
-
-# Per-package overrides also work independently:
-#   XINCLI_CORE_VERSION, XINCLI_SOLID_VERSION, XINCLI_KEYMAP_VERSION,
-#   XINCLI_REACT_VERSION, XINCLI_ANDROID_VERSION
-```
-
-The script sweeps stale `.bun` store dirs whose versions don't match the
-targets — this is what prevented the earlier bug where nested lockfile
-resolution kept bundling a stale `.so`.
-
-### Publishing a new @xincli release
-
-From your phone (or any machine with `GH_TOKEN`):
-
-```bash
-# 1. In the opentui fork: bump versions, commit, push
-cd ~/opentui
-# Edit packages/{core,react,solid,keymap}/package.json → version: "0.4.10"
+# 2. cd there, resolve conflicts:
+cd /tmp/refresh
+$EDITOR path/to/conflicted-file
 git add -A
-git commit -m "bump: 0.4.10"
-git push
+git am --continue
 
-# 2. If the .so changed, rebuild it on your phone first:
-bash packages/core/scripts/build-native-termux.sh
-git add packages/core/prebuilt/
-git commit -m "build: native arm64 .so for 0.4.10"
-git push
+# 3. Regenerate patches back into the repo
+bash "$OLDPWD/termux/ci/refresh-patches.sh" /tmp/refresh
 
-# 3. Orchestrate the release (triggers all 4 workflows in order)
-GH_TOKEN=ghp_xxx bash ~/opencode-bionic/termux/release-opentui.sh 0.4.10
-
-# 4. Rebuild opencode with the new packages
-cd ~/opencode-bionic
-XINCLI_CORE_VERSION=0.4.10 bash termux/rebuild-opencode.sh
+# 4. Verify + commit
+cd $OLDPWD
+git status termux/patches/
+git add termux/patches/ && git commit -m "patches: refresh for upstream vX.Y.Z"
 ```
 
-### Debugging opencode crashes
+`refresh-patches.sh` runs `git format-patch v<pinned>..HEAD` and writes
+into `termux/patches/`. Patch numbering and subject slugs are
+deterministic, so filenames stay stable when the delta doesn't change.
 
-```bash
-# 1. Verify the isolated opentui stack works (rules out opencode itself)
-bash termux/test-opentui-isolated.sh
+## Bumping opentui or the .so
 
-# 2. Check the .so
-file node_modules/@xincli/opentui-core-android-arm64/libopentui.so
-# must be: ELF 64-bit LSB shared object, ARM aarch64
-
-# 3. Clean reinstall if node_modules is broken
-bash termux/clean-reinstall.sh
-```
-
-## How it works
-
-### The 0.4.10 compiled binary fix
-
-Previous versions crashed with `opentui is not supported on the current platform: android-arm64` when running the **compiled binary** (but `bun run` worked fine).
-
-**Root cause:** When opentui is bundled into a Bun-compiled binary, the `.so` lives inside bunfs (Bun's virtual embedded filesystem). `dlopen()` is a kernel syscall and cannot read from bunfs — it fails with ENOENT.
-
-**Fix (in `@xincli/opentui-core@0.4.10`):** When `isBunfsPath(targetLibPath)` is true, extract the `.so` to `$TMPDIR/opentui-native/libopentui-<hash>.so` using `readFileSync()` (which Bun intercepts to read from bunfs), then point `targetLibPath` at the extracted file. See `packages/core/src/zig.ts` in the opentui fork.
-
-### The clean v2 catalog pin approach
-
-Previous versions used Bun's `overrides` field to force `@opentui/core` → `@xincli/opentui-core` across the entire workspace. This was necessary because upstream `@opentui/solid@0.4.3` brought its own nested `@opentui/core@0.4.3` (which has no Android branch).
-
-**Since 0.4.10:** `@xincli/opentui-solid` and `@xincli/opentui-keymap` are published to npm with `@opentui/core` aliased to `npm:@xincli/opentui-core` in their own `dependencies` field. So we just pin the catalog entries:
+Everything version-related is in `versions.json`:
 
 ```json
 {
-  "workspaces": {
-    "catalog": {
-      "@opentui/core":  "npm:@xincli/opentui-core@0.4.10",
-      "@opentui/solid": "npm:@xincli/opentui-solid@0.4.10",
-      "@opentui/keymap":"npm:@xincli/opentui-keymap@0.4.10"
-    }
-  },
-  "optionalDependencies": {
-    "@xincli/opentui-core-android-arm64": "0.4.11"
+  "opencode": "1.18.3",
+  "opentui": {
+    "core": "0.4.10",
+    "keymap": "0.4.10",
+    "solid": "0.4.10",
+    "react": "0.4.10",
+    "androidArm64Native": "0.4.11"
   }
 }
 ```
 
-No `overrides` needed — the cascade happens naturally through the `npm:` aliases in each package's `dependencies`.
+Edit, then:
 
-### The Termux patches (still needed)
+```bash
+bun termux/ci/versions.ts check    # sanity check (no-op if in a bare repo)
+bash termux/rebuild-opencode.sh    # rebuilds against a fresh tree
+```
 
-These patches are Termux-specific (not opentui-related) and remain necessary:
+CI reads the same file; there is no other place versions are tracked.
 
-| Patch | Why |
-|---|---|
-| Remove `trustedDependencies` | MTE crashes on any install script that loads native N-API modules |
-| Remove root `postinstall` + `prepare` | Husky spawns child processes that crash under MTE |
-| Remove stale `@ff-labs/fff-bun@0.9.3` patchedDependency | Version mismatch with declared `0.9.4` |
-| Patch `fff.bun.ts` for lazy-load | `@ff-labs/fff-bun` has `os: [darwin,linux,win32]` — Bun skips it on Android |
+## Release + upstream auto-bump
+
+- `release.yml` — manual dispatch. Builds the binary in `termux-docker`,
+  wraps it into a `.deb`, publishes to GitHub Releases.
+- `watch-upstream.yml` — runs every 2 days:
+  1. Reconciles our `prerelease` flag against upstream for existing tags
+  2. If upstream has a newer tag, bumps `versions.json`, dry-runs
+     `prepare-build-tree.sh` to prove patches still apply, commits, and
+     dispatches `release.yml` with `prerelease=<upstream's flag>`
+  3. On patch conflict, the workflow fails loudly — human refreshes
+     patches, then re-triggers
 
 ## Troubleshooting
 
-| Error | Cause | Fix |
+| Symptom | Cause | Fix |
 |---|---|---|
-| `opentui is not supported on the current platform: android-arm64` | Compiled binary can't load `.so` from bunfs | Update to `@xincli/opentui-core@0.4.10+` (has the bunfs extraction fix) |
-| `Cannot find module '@ff-labs/fff-bun'` | Package has `os:` restriction, skipped on Android | Patch 1f handles this (lazy require + null guard) — run `apply-termux-patches.sh` |
-| `@opentui/core is @opentui/core (expected @xincli/opentui-core)` | Catalog pin not applied | Run `apply-termux-patches.sh`, then `bun install` again |
-| `libopentui.so: MISSING` | `optionalDependency` not installed | `bun add @xincli/opentui-core-android-arm64@0.4.11 --optional` |
-| `@opentui/core not resolvable in any node_modules` | `find` used to miss Bun's isolated symlink layout | Fixed in `rebuild-opencode.sh` — uses explicit path probes + `packages/*/node_modules` glob fallback |
-| Stale `.so` bundled after a native-only bump | Nested lockfile resolution reused a stale `.bun` store dir | `rebuild-opencode.sh` now sweeps `.bun` store dirs whose versions don't match target |
+| `git am --3way` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
+| `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `build-termux.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
+| `libopentui.so` extraction fails from bunfs | Native `.so` version drift, or the compiled binary shipped with the wrong `.so` | Bump `opentui.androidArm64Native` in `versions.json` and rebuild |
+| `Cannot find module '@ff-labs/fff-bun'` at runtime | Patch 0003 didn't apply | `git am --abort` in the build tree; re-run `apply-patches.sh` |
 
-## Related repositories
+## Design notes
 
-- [bd-loser/opentui](https://github.com/bd-loser/opentui) — the opentui fork (publishes `@xincli/*` packages)
-- [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) — patched Bun for Termux (Bionic/Android arm64)
-- [sst/opencode](https://github.com/sst/opencode) — upstream opencode
-- [sst/opentui](https://github.com/sst/opentui) — upstream opentui
+**Why quilt patches over a fork clone?** Upstream ships every 2 days.
+Rebasing a fork clone silently accumulates drift; quilt patches either
+apply cleanly or fail loudly. Same pattern as Debian, Nixpkgs, Alpine,
+Homebrew, Fedora.
 
-## License
+**Why split source vs config?** Source patches are shape-fragile — if
+upstream renames the file, we want CI to fail. Config edits should
+survive upstream reformatting silently, so they're expressed
+programmatically in `versions.ts`.
 
-MIT (same as upstream opencode)
+**Why put patches under `termux/patches/`?** Upstream itself uses
+top-level `patches/` for its own Bun patch files
+(`patches/@ff-labs%2Ffff-bun@0.9.3.patch` etc.). Nesting under `termux/`
+avoids the collision.
+
+**Why fetch upstream fresh instead of a git submodule?** Submodules add
+a fetch step and pin at commit granularity when we want tag granularity.
+A `--depth 1 -b vX.Y.Z` clone in `prepare-build-tree.sh` is cheaper and
+transparent about what's being built.

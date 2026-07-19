@@ -46,7 +46,7 @@ __versions_json_file="$(__versions_json_find || true)"
 __versions_dump_py() {
   # $1 = path to versions.json
   # Emits KEY=VALUE lines that `eval` can consume. python3 is already
-  # required by apply-termux-patches.sh, so no new dependency.
+  # required by setup.sh's Termux prereqs, so no new dependency.
   python3 - "$1" <<'PY'
 import json, sys
 v = json.load(open(sys.argv[1]))

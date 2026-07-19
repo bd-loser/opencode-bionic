@@ -135,7 +135,7 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Bump versions.json
+      - name: Bump versions.json + refresh README
         if: steps.upstream.outputs.changed == 'true'
         env:
           NEW: ${{ steps.upstream.outputs.latest }}
@@ -143,10 +143,28 @@ jobs:
           set -eu
           jq --arg v "$NEW" '.opencode = $v' versions.json > versions.json.new
           mv versions.json.new versions.json
+          # No upstream tree present in the repo now, so `apply` only rewrites
+          # the README badge/table (targeting REPO_ROOT). `check` follows to
+          # confirm nothing regressed.
           bun termux/ci/versions.ts apply
           bun termux/ci/versions.ts check
           echo "diff:"
           git --no-pager diff --stat
+
+      - name: Preflight — patches apply cleanly against new upstream
+        # Root cause we're protecting against: if upstream renames or reformats
+        # a file we patch (bunfig.toml, fff.bun.ts, build-termux.ts), git am
+        # --3way fails, and the release run would fail hours later. Fail fast
+        # HERE instead so the maintainer sees a red bump job with the failing
+        # patch pointed out, and can regenerate patches before dispatching.
+        if: steps.upstream.outputs.changed == 'true'
+        env:
+          NEW: ${{ steps.upstream.outputs.latest }}
+        run: |
+          set -eu
+          SCRATCH="$RUNNER_TEMP/preflight-v$NEW"
+          bash termux/ci/prepare-build-tree.sh "$SCRATCH"
+          echo "preflight OK — patches apply cleanly to upstream v$NEW"
 
       - name: Verify tag is unused
         if: steps.upstream.outputs.changed == 'true'
@@ -169,8 +187,9 @@ jobs:
           set -eu
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add versions.json README.md package.json packages/opencode/package.json
-          git add -A -- packages
+          # Only the repo-owned files change on a bump now: versions.json is
+          # the source of truth, README.md carries the versioned badge/table.
+          git add versions.json README.md
           git commit -m "chore(upstream): bump opencode $OLD → $NEW" \
                      -m "Auto-bumped by watch-upstream.yml from $UPSTREAM."
           git push origin HEAD:main

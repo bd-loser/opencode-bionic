@@ -1,19 +1,25 @@
 #!/usr/bin/env bun
 // Reads versions.json (the single source of truth for opencode-bionic
-// releases) and either applies the pinned versions to the workspace or
-// checks that everything already matches.
+// releases) and either applies pinned versions to a target tree or
+// checks that a tree already matches.
 //
-//   bun termux/ci/versions.ts apply   # rewrite package.json files in place
-//   bun termux/ci/versions.ts check   # exit non-zero on drift (for CI)
-//   bun termux/ci/versions.ts print   # emit shell-eval'able KEY=VAL lines
+//   bun termux/ci/versions.ts apply                      # rewrite files in repo (README only, post-migration)
+//   bun termux/ci/versions.ts apply --target <dir>       # rewrite files in an upstream clone
+//   bun termux/ci/versions.ts check                      # exit non-zero if repo README drifted
+//   bun termux/ci/versions.ts check --target <dir>       # exit non-zero if target drifted
+//   bun termux/ci/versions.ts print                      # emit shell-eval'able KEY=VAL lines
+//
+// The "config delta" (root package.json cleanup, catalog aliases,
+// optionalDependencies, plugin peer bumps) is expressed programmatically
+// here rather than as a patch because the shape survives upstream
+// reformatting. The "source delta" (bunfig.toml, fff.bun.ts,
+// build-termux.ts) lives in termux/patches/ as unified diffs.
 
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
 
-const ROOT = path.resolve(import.meta.dir, "..", "..")
-const VERSIONS_FILE = path.join(ROOT, "versions.json")
-const OPENCODE_PKG = path.join(ROOT, "packages/opencode/package.json")
-const ROOT_PKG = path.join(ROOT, "package.json")
+const REPO_ROOT = path.resolve(import.meta.dir, "..", "..")
+const VERSIONS_FILE = path.join(REPO_ROOT, "versions.json")
 
 type Versions = {
   opencode: string
@@ -37,27 +43,49 @@ function writeJson(file: string, data: unknown) {
   writeFileSync(file, JSON.stringify(data, null, 2) + "\n")
 }
 
-// Returns [ok, description]. On apply, also mutates state.
 type Check = { name: string; ok: boolean; msg: string; fix?: () => void }
 
-function checkOpencodeVersion(): Check {
-  const pkg = readJson(OPENCODE_PKG)
-  const cur = pkg.version
+// Every fix() re-reads the target file from disk before mutating. Multiple
+// checks touch root package.json — if each captured its own `pkg` in a
+// closure, the last write would clobber earlier edits.
+function checkOpencodeVersion(target: string): Check | null {
+  const file = path.join(target, "packages/opencode/package.json")
+  if (!existsSync(file)) return null
+  const cur = readJson(file).version
   const want = versions.opencode
   return {
     name: "packages/opencode/package.json version",
     ok: cur === want,
     msg: cur === want ? want : `${cur} → ${want}`,
     fix: () => {
+      const pkg = readJson(file)
       pkg.version = want
-      writeJson(OPENCODE_PKG, pkg)
+      writeJson(file, pkg)
     },
   }
 }
 
-function checkCatalogOpentui(): Check {
-  const pkg = readJson(ROOT_PKG)
-  const cat = pkg.workspaces?.catalog ?? {}
+function checkPluginVersion(target: string): Check | null {
+  const file = path.join(target, "packages/plugin/package.json")
+  if (!existsSync(file)) return null
+  const cur = readJson(file).version
+  const want = versions.opencode
+  return {
+    name: "packages/plugin/package.json version",
+    ok: cur === want,
+    msg: cur === want ? want : `${cur} → ${want}`,
+    fix: () => {
+      const pkg = readJson(file)
+      pkg.version = want
+      writeJson(file, pkg)
+    },
+  }
+}
+
+function checkCatalogOpentui(target: string): Check | null {
+  const file = path.join(target, "package.json")
+  if (!existsSync(file)) return null
+  const cat = readJson(file).workspaces?.catalog ?? {}
   const wantCore = `npm:@xincli/opentui-core@${versions.opentui.core}`
   const wantKm = `npm:@xincli/opentui-keymap@${versions.opentui.keymap}`
   const wantSolid = `npm:@xincli/opentui-solid@${versions.opentui.solid}`
@@ -66,49 +94,98 @@ function checkCatalogOpentui(): Check {
     cat["@opentui/keymap"] !== wantKm ||
     cat["@opentui/solid"] !== wantSolid
   return {
-    name: "root package.json catalog opentui pins",
+    name: "root catalog opentui pins",
     ok: !drifted,
     msg: drifted
       ? `core=${cat["@opentui/core"]} keymap=${cat["@opentui/keymap"]} solid=${cat["@opentui/solid"]} → ${versions.opentui.core}`
       : `all @${versions.opentui.core}`,
     fix: () => {
-      cat["@opentui/core"] = wantCore
-      cat["@opentui/keymap"] = wantKm
-      cat["@opentui/solid"] = wantSolid
-      writeJson(ROOT_PKG, pkg)
+      const pkg = readJson(file)
+      pkg.workspaces ??= {}
+      pkg.workspaces.catalog ??= {}
+      pkg.workspaces.catalog["@opentui/core"] = wantCore
+      pkg.workspaces.catalog["@opentui/keymap"] = wantKm
+      pkg.workspaces.catalog["@opentui/solid"] = wantSolid
+      writeJson(file, pkg)
     },
   }
 }
 
-function checkAndroidNative(): Check {
-  const pkg = readJson(ROOT_PKG)
+function checkAndroidNative(target: string): Check | null {
+  const file = path.join(target, "package.json")
+  if (!existsSync(file)) return null
+  const snap = readJson(file)
   const want = versions.opentui.androidArm64Native
-  const curOverride = pkg.overrides?.["@xincli/opentui-core-android-arm64"]
-  const curOptional = pkg.optionalDependencies?.["@xincli/opentui-core-android-arm64"]
+  const curOverride = snap.overrides?.["@xincli/opentui-core-android-arm64"]
+  const curOptional = snap.optionalDependencies?.["@xincli/opentui-core-android-arm64"]
   const drifted = curOverride !== want || curOptional !== want
   return {
-    name: "root package.json android-arm64 native pin",
+    name: "root android-arm64 native pin",
     ok: !drifted,
     msg: drifted ? `override=${curOverride} optional=${curOptional} → ${want}` : `@${want}`,
     fix: () => {
+      const pkg = readJson(file)
       pkg.overrides ??= {}
       pkg.optionalDependencies ??= {}
       pkg.overrides["@xincli/opentui-core-android-arm64"] = want
       pkg.optionalDependencies["@xincli/opentui-core-android-arm64"] = want
-      writeJson(ROOT_PKG, pkg)
+      writeJson(file, pkg)
+    },
+  }
+}
+
+// Root package.json cleanup: remove upstream install-time hooks and
+// patched-dependency entries that don't apply on Termux.
+//
+//   - scripts.postinstall runs `bun run --cwd packages/core fix-node-pty`,
+//     which needs node-pty native bindings we don't ship.
+//   - scripts.prepare runs `husky`, which we don't install.
+//   - trustedDependencies triggers native builds (esbuild, tree-sitter, etc.)
+//     that either fail or aren't needed on Termux.
+//   - patchedDependencies["@ff-labs/fff-bun@0.9.3"] references a patch
+//     upstream carries — we swap fff-bun for a lazy require instead
+//     (see termux/patches/0003-*).
+function checkRootConfigCleanup(target: string): Check | null {
+  const file = path.join(target, "package.json")
+  if (!existsSync(file)) return null
+  const pkg = readJson(file)
+  const hasPostinstall = pkg.scripts?.postinstall !== undefined
+  const hasPrepare = pkg.scripts?.prepare !== undefined
+  const hasTrusted = Array.isArray(pkg.trustedDependencies) && pkg.trustedDependencies.length > 0
+  const hasFffPatch = pkg.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined
+  const drifted = hasPostinstall || hasPrepare || hasTrusted || hasFffPatch
+  const detail = [
+    hasPostinstall && "postinstall",
+    hasPrepare && "prepare",
+    hasTrusted && `trustedDeps(${pkg.trustedDependencies.length})`,
+    hasFffPatch && "fff-bun-patch",
+  ]
+    .filter(Boolean)
+    .join(",")
+  return {
+    name: "root package.json cleanup (scripts/trustedDeps/patchedDeps)",
+    ok: !drifted,
+    msg: drifted ? `remove: ${detail}` : "clean",
+    fix: () => {
+      const p = readJson(file)
+      if (p.scripts?.postinstall !== undefined) delete p.scripts.postinstall
+      if (p.scripts?.prepare !== undefined) delete p.scripts.prepare
+      if (Array.isArray(p.trustedDependencies) && p.trustedDependencies.length > 0) p.trustedDependencies = []
+      if (p.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined)
+        delete p.patchedDependencies["@ff-labs/fff-bun@0.9.3"]
+      writeJson(file, p)
     },
   }
 }
 
 // Rewrite @opentui/* refs across every workspace package.json.
 //
-// We do NOT delegate to upstream script/upgrade-opentui.ts because it
-// (a) strips `npm:@xincli/opentui-*@…` aliases back to plain versions,
-// which breaks the catalog pin that makes the Termux build work, and
-// (b) runs `bun install` unconditionally, which fails offline / in CI
-// preflight. Instead, walk the tree ourselves and preserve the alias
-// shape everywhere it already exists.
-async function applyOpentuiWorkspaces(): Promise<number> {
+// Preserves `npm:@xincli/opentui-*@…` alias shape everywhere it exists.
+// Skips `catalog:` and `workspace:` sentinels — those already resolve via
+// the root catalog we pinned above. Silently no-ops when the target has no
+// package.json files (e.g. repo without an upstream clone attached).
+async function applyOpentuiWorkspaces(target: string): Promise<number> {
+  if (!existsSync(path.join(target, "package.json"))) return 0
   const SKIP_DIRS = new Set([".git", ".opencode", ".turbo", "dist", "node_modules"])
   const OPENTUI_KEYS = ["@opentui/core", "@opentui/keymap", "@opentui/solid"] as const
   const wantFor: Record<(typeof OPENTUI_KEYS)[number], string> = {
@@ -122,7 +199,7 @@ async function applyOpentuiWorkspaces(): Promise<number> {
     "@opentui/solid": `npm:@xincli/opentui-solid@${versions.opentui.solid}`,
   }
 
-  const files = (await Array.fromAsync(new Bun.Glob("**/package.json").scan({ cwd: ROOT }))).filter(
+  const files = (await Array.fromAsync(new Bun.Glob("**/package.json").scan({ cwd: target }))).filter(
     (f) => !f.split("/").some((p) => SKIP_DIRS.has(p)),
   )
 
@@ -135,8 +212,6 @@ async function applyOpentuiWorkspaces(): Promise<number> {
       const cur = map[key]
       if (typeof cur !== "string") continue
       if (cur === "catalog:" || cur.startsWith("workspace:")) continue
-      // Preserve the `npm:@xincli/opentui-*@…` alias shape when present.
-      // Otherwise use the bare version (with any existing ^/~/>= prefix).
       let next: string
       if (cur.startsWith("npm:@xincli/opentui-")) {
         next = aliasFor[key]
@@ -153,7 +228,7 @@ async function applyOpentuiWorkspaces(): Promise<number> {
   }
 
   for (const rel of files) {
-    const abs = path.join(ROOT, rel)
+    const abs = path.join(target, rel)
     const pkg = readJson(abs)
     const dirty =
       rewriteMap(pkg.dependencies) ||
@@ -168,8 +243,10 @@ async function applyOpentuiWorkspaces(): Promise<number> {
   return changed
 }
 
+// README always lives in the repo, never in an upstream target.
 function applyReadme(): boolean {
-  const README = path.join(ROOT, "README.md")
+  const README = path.join(REPO_ROOT, "README.md")
+  if (!existsSync(README)) return false
   const orig = readFileSync(README, "utf8")
   const badges =
     `[![opentui-js](https://img.shields.io/badge/opentui--js-@xincli%40${versions.opentui.core}-green.svg)](https://www.npmjs.com/package/@xincli/opentui-core)\n` +
@@ -194,8 +271,20 @@ function applyReadme(): boolean {
   return true
 }
 
+function parseArgs() {
+  const args = process.argv.slice(2)
+  const mode = args[0] ?? "check"
+  let target = REPO_ROOT
+  for (let i = 1; i < args.length; i++) {
+    if (args[i] === "--target" && args[i + 1]) {
+      target = path.resolve(args[++i]!)
+    }
+  }
+  return { mode, target }
+}
+
 async function main() {
-  const mode = process.argv[2] ?? "check"
+  const { mode, target } = parseArgs()
 
   if (mode === "print") {
     console.log(`OPENCODE_VERSION=${versions.opencode}`)
@@ -208,16 +297,26 @@ async function main() {
     return
   }
 
-  const checks = [checkOpencodeVersion(), checkCatalogOpentui(), checkAndroidNative()]
+  const checks = [
+    checkOpencodeVersion(target),
+    checkPluginVersion(target),
+    checkCatalogOpentui(target),
+    checkAndroidNative(target),
+    checkRootConfigCleanup(target),
+  ].filter((c): c is Check => c !== null)
+
   const drifted = checks.filter((c) => !c.ok)
 
+  if (checks.length === 0) {
+    console.log(`  (no package.json found at ${target === REPO_ROOT ? "repo root" : target}; only README will be checked)`)
+  }
   for (const c of checks) {
     console.log(`  ${c.ok ? "✓" : "✗"} ${c.name}: ${c.msg}`)
   }
 
   if (mode === "check") {
     if (drifted.length) {
-      console.error(`\nDrift detected in ${drifted.length} location(s). Run: bun termux/ci/versions.ts apply`)
+      console.error(`\nDrift detected in ${drifted.length} location(s). Run: bun termux/ci/versions.ts apply --target ${target}`)
       process.exit(1)
     }
     console.log("\nAll pins match versions.json")
@@ -226,7 +325,7 @@ async function main() {
 
   if (mode === "apply") {
     for (const c of drifted) c.fix?.()
-    const wsChanged = await applyOpentuiWorkspaces()
+    const wsChanged = await applyOpentuiWorkspaces(target)
     const readmeChanged = applyReadme()
     console.log(
       drifted.length

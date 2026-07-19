@@ -34,7 +34,7 @@
 # PREREQUISITES:
 #   - opencode runs successfully via `bash termux/run-opencode-termux.sh`
 #   - node_modules is fully installed (4055 packages)
-#   - patches are applied (bash termux/apply-termux-patches.sh)
+#   - patches are applied (via prepare-build-tree.sh or setup.sh)
 #
 # USAGE:
 #   bash termux/build-opencode-termux.sh
@@ -75,9 +75,11 @@ if [ ! -d "node_modules" ]; then
   fail "node_modules not found. Run: bash termux/clean-reinstall.sh"
 fi
 
-# Verify patches applied
-if ! grep -q "opencode-bionic-patched" "packages/core/src/filesystem/fff.bun.ts" 2>/dev/null; then
-  fail "Patches not applied. Run: bash termux/apply-termux-patches.sh"
+# Verify termux/patches/0002-*.patch was applied (build-termux.ts exists).
+# Under the quilt architecture, that file only lives in the tree after
+# `bash termux/ci/apply-patches.sh <tree>` runs.
+if [ ! -f "packages/opencode/script/build-termux.ts" ]; then
+  fail "Patches not applied — build-termux.ts is missing. Run: bash termux/ci/prepare-build-tree.sh <dir>"
 fi
 
 # Verify bun is the launcher (not raw binary — FFI would crash during build)

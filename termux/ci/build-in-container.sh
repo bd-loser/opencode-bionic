@@ -1,17 +1,20 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Runs INSIDE termux-docker (aarch64). Builds the opencode binary and
-# publishes it to /out/opencode (a bind-mounted, world-writable host dir).
+# Runs INSIDE termux-docker (aarch64). Fetches upstream opencode fresh at
+# the version pinned by versions.json, applies our config delta + patches,
+# builds, and publishes the binary to /out/opencode.
 #
 # Env inputs:
-#   OPENCODE_VERSION  version string baked into the binary (default: 0.0.0-termux-ci)
+#   OPENCODE_VERSION  version string baked into the binary (also decides
+#                     which upstream tag to check out; default: 0.0.0-termux-ci)
 #   OPENCODE_CHANNEL  channel string (default: dev)
 #
 # Mounts expected:
-#   /workspace  = the repo checkout (read-only in practice)
+#   /workspace  = the opencode-bionic checkout (this fork; read-only in practice)
 #   /out        = a writable dir on the host, for artifact handoff
 #
-# The `bash -c '...'` inline form we used before made quoting brittle;
-# invoking this file directly keeps it a normal, greppable script.
+# Under the quilt-style architecture, /workspace no longer contains upstream
+# opencode source — only our patches, scripts, and versions.json. Upstream
+# is cloned fresh here so we always build against a clean, known tag.
 
 set -euo pipefail
 
@@ -37,41 +40,39 @@ mount | grep -E "workspace|overlay|out" || true
 echo "==========="
 
 pkg update -y
-pkg install -y git python curl dpkg rsync
+pkg install -y git python curl dpkg
 
 # bun-termux install URL is intentionally hardcoded rather than read from
 # versions.json — it isn't tied to any opencode version.
 curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
 
-# Copy the checkout into a container-native path where bun install is
-# guaranteed to work (real termux filesystem, not the bind mount).
+# Build tree lives in a container-native path (real termux filesystem, not
+# the bind mount). prepare-build-tree.sh handles: git clone at the pinned
+# tag, versions.ts apply (config delta), git am (source patches).
 BUILD_ROOT="$HOME/opencode"
-mkdir -p "$BUILD_ROOT"
-rsync -a --delete \
-  --exclude ".git" \
-  --exclude "node_modules" \
-  /workspace/ "$BUILD_ROOT/"
+rm -rf "$BUILD_ROOT"
 
-# Run bun install ourselves — the verifier in clean-reinstall.sh trips on
-# monorepo installs (counts only top-level entries in ./node_modules and
-# expects 1000+, but per-workspace hoisting legitimately leaves only ~15-20
-# there). Setting SKIP_REINSTALL=1 tells setup.sh to trust the node_modules
-# we produced here.
+# Use the version pinned in /workspace/versions.json unless we're being
+# asked to build a specific tag. When OPENCODE_VERSION is the default
+# placeholder, drop it so prepare-build-tree.sh falls back to versions.json.
+FETCH_ARGS=("$BUILD_ROOT")
+if [ "$OPENCODE_VERSION" != "0.0.0-termux-ci" ]; then
+  FETCH_ARGS+=("v$OPENCODE_VERSION")
+fi
+
+bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
+
+# Install deps and build. build-termux.ts calls `git branch --show-current`
+# when neither OPENCODE_CHANNEL nor OPENCODE_VERSION is set; we pass both
+# explicitly so the version-detection branch skips git.
 cd "$BUILD_ROOT"
 bun install
 cd -
 
-OPENCODE_ROOT="$BUILD_ROOT" SKIP_REINSTALL=1 SKIP_SMOKE_TEST=1 \
-  bash "$BUILD_ROOT/termux/setup.sh"
-
-# build-termux.ts (via packages/script/src/index.ts) calls
-# `git branch --show-current` when neither OPENCODE_CHANNEL nor
-# OPENCODE_VERSION is set. We rsynced without .git, so provide them
-# explicitly so the version-detection branch skips git.
 OPENCODE_ROOT="$BUILD_ROOT" \
 OPENCODE_CHANNEL="$OPENCODE_CHANNEL" \
 OPENCODE_VERSION="$OPENCODE_VERSION" \
-  bash "$BUILD_ROOT/termux/build-opencode-termux.sh"
+  bash /workspace/termux/build-opencode-termux.sh
 
 echo "=== POST-BUILD: publishing artifact ==="
 set -x
@@ -81,7 +82,6 @@ test -x "$BIN" || chmod +x "$BIN"
 ls -la "$BIN"
 cp "$BIN" /out/opencode
 chmod 0755 /out/opencode
-# Compute sha for later verification.
 sha256sum /out/opencode | tee /out/opencode.sha256
 ls -la /out/
 set +x

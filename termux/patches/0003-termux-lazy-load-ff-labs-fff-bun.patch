@@ -1,0 +1,79 @@
+From db1111da91ee65925b51007194747f95ffbe5030 Mon Sep 17 00:00:00 2001
+From: opencode-bionic <bionic@build.local>
+Date: Sun, 19 Jul 2026 16:59:04 +0600
+Subject: [PATCH 3/3] termux: lazy-load @ff-labs/fff-bun
+
+@ff-labs/fff-bun@0.9.4 declares os:[darwin,linux,win32] in package.json.
+On Termux (process.platform === 'android') Bun silently skips the
+package during install, so a static ESM import would throw at startup.
+Fall back to require() inside try/catch so we can null-guard and let
+opencode's existing ripgrep fallback take over.
+---
+ packages/core/src/filesystem/fff.bun.ts | 44 ++++++++++++++++++-------
+ 1 file changed, 32 insertions(+), 12 deletions(-)
+
+diff --git a/packages/core/src/filesystem/fff.bun.ts b/packages/core/src/filesystem/fff.bun.ts
+index 9843419..a5fd420 100644
+--- a/packages/core/src/filesystem/fff.bun.ts
++++ b/packages/core/src/filesystem/fff.bun.ts
+@@ -1,17 +1,33 @@
+-import {
+-  FileFinder,
+-  type DirItem,
+-  type DirSearchResult,
+-  type FileItem,
+-  type GrepCursor,
+-  type GrepMatch,
+-  type GrepResult,
+-  type InitOptions,
+-  type MixedItem,
+-  type MixedSearchResult,
+-  type SearchResult,
++import type {
++  DirItem,
++  DirSearchResult,
++  FileItem,
++  GrepCursor,
++  GrepMatch,
++  GrepResult,
++  InitOptions,
++  MixedItem,
++  MixedSearchResult,
++  SearchResult,
+ } from "@ff-labs/fff-bun"
+ 
++// opencode-bionic-patched [Patch 1f]: Lazy-load @ff-labs/fff-bun runtime value.
++// Root cause: @ff-labs/fff-bun@0.9.4 has "os": ["darwin","linux","win32"] in
++// its package.json. On Termux (process.platform === "android"), Bun's installer
++// silently skips the package — it's never placed in node_modules. A static
++// ESM import would throw "Cannot find module" at startup, crashing opencode
++// before it can fall back to ripgrep.
++// Fix: use require() (which can be try/caught) instead of a static import.
++// If the package isn't installed, FileFinder is null and available() returns
++// false — opencode's search.ts then uses the ripgrep fallback (existing behavior).
++type FileFinderType = typeof import("@ff-labs/fff-bun")["FileFinder"]
++let FileFinder: FileFinderType | null
++try {
++  FileFinder = require("@ff-labs/fff-bun").FileFinder
++} catch {
++  FileFinder = null
++}
++
+ declare global {
+   const FFF_LIBC: "gnu" | "musl"
+ }
+@@ -112,10 +128,14 @@ export interface Picker {
+ }
+ 
+ export function available() {
++  // opencode-bionic-patched [Patch 1f]: null guard for missing @ff-labs/fff-bun
++  if (!FileFinder) return false
+   return FileFinder.isAvailable()
+ }
+ 
+ export function create(opts: Init): Result<Picker> {
++  // opencode-bionic-patched [Patch 1f]: null guard for missing @ff-labs/fff-bun
++  if (!FileFinder) return { ok: false, error: "fff-bun not installed on this platform (os restriction)" }
+   const made = FileFinder.create(opts)
+   if (!made.ok) return made
+   const pick = made.value
