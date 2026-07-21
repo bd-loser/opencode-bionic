@@ -113,7 +113,12 @@ jobs:
           else
             # Include prereleases: we mirror upstream's flag, so the newest
             # tag wins regardless of stability. --exclude-drafts still applies.
-            row="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 1 --json tagName,isPrerelease --jq '.[0]')"
+            # Filter to semver-shaped tags (vX.Y.Z) — upstream occasionally
+            # publishes PR-preview releases with tags like `pr-37967-screenshots`
+            # that we can't build (they're not tagged commits we clone by).
+            row="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 20 \
+                --json tagName,isPrerelease \
+                --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0]')"
             if [ -z "$row" ] || [ "$row" = "null" ]; then
               echo "error: could not resolve latest $UPSTREAM release" >&2
               exit 1
