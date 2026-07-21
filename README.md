@@ -74,7 +74,7 @@ sees the bump on its next run.
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `1.18.3` |
+| opencode (upstream) | `1.18.4` |
 | `@opentui/{core,keymap,solid}` (JS, via `@xincli`) | `0.4.10` |
 | `@xincli/opentui-core-android-arm64` (native `.so`) | `0.4.11` |
 | `bun-termux` runtime | tracked at [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) |
