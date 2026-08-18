@@ -164,8 +164,12 @@ jobs:
           # quietly install something else. OPENCODE_VERSION pins it.
           if [ -n "$REF" ]; then
             SOURCE="Built from [\`$(printf '%s' "$REF" | cut -c1-8)\`](https://github.com/anomalyco/opencode/commit/$REF) — upstream reports itself as v$VERSION at that commit."
+            UPSTREAM_DESCRIPTION="$(gh api "repos/anomalyco/opencode/commits/$REF" --jq '.commit.message // empty' 2>/dev/null || true)"
+            UPSTREAM_DESCRIPTION_TITLE="Upstream commit"
           else
             SOURCE="Built from upstream tag [\`v$VERSION\`](https://github.com/anomalyco/opencode/releases/tag/v$VERSION)."
+            UPSTREAM_DESCRIPTION="$(gh api "repos/anomalyco/opencode/releases/tags/v$VERSION" --jq '.body // empty' 2>/dev/null || true)"
+            UPSTREAM_DESCRIPTION_TITLE="Upstream release notes"
           fi
           if [ "$PRERELEASE" = "true" ]; then
             INSTALL_ENV="OPENCODE_VERSION=$RELEASE "
@@ -176,6 +180,11 @@ jobs:
           opencode v$RELEASE — Termux/Bionic aarch64 build.
 
           $SOURCE
+          EOF
+          if [ -n "$UPSTREAM_DESCRIPTION" ]; then
+            printf '\n## %s\n\n%s\n' "$UPSTREAM_DESCRIPTION_TITLE" "$UPSTREAM_DESCRIPTION" >> "$NOTES_FILE"
+          fi
+          cat >> "$NOTES_FILE" <<EOF
 
           Install:
 

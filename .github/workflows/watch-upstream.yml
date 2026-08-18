@@ -51,6 +51,10 @@ on:
         description: "Skip the dev-branch prerelease build this run."
         type: boolean
         default: false
+      draft:
+        description: "Create any release dispatched by this run as a draft."
+        type: boolean
+        default: false
 
 concurrency:
   group: watch-upstream
@@ -59,10 +63,6 @@ concurrency:
 env:
   UPSTREAM: anomalyco/opencode
   OURS: ${{ github.repository }}
-  # How many dev prereleases to keep. Two a day is ~730/year, which buries
-  # the stable releases in the list and the Releases page; the old ones are
-  # of no use to anyone once a newer dev build exists.
-  DEV_KEEP: "5"
 
 jobs:
   watch:
@@ -229,12 +229,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW: ${{ steps.upstream.outputs.latest }}
           UP_PRE: ${{ steps.upstream.outputs.upstream_prerelease }}
+          DRAFT: ${{ inputs.draft || false }}
         run: |
           set -eu
           gh workflow run release.yml \
             --ref main \
             -f version="$NEW" \
-            -f draft=false \
+            -f draft="$DRAFT" \
             -f prerelease="$UP_PRE"
           echo "dispatched release.yml for v$NEW (prerelease=$UP_PRE)"
 
@@ -311,6 +312,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ steps.dev.outputs.sha }}
           TAG: ${{ steps.dev.outputs.tag }}
+          DRAFT: ${{ inputs.draft || false }}
         run: |
           set -eu
           # Pass the resolved SHA, not "dev": the branch can move between this
@@ -319,7 +321,7 @@ jobs:
           gh workflow run release.yml \
             --ref main \
             -f upstream_ref="$SHA" \
-            -f draft=false \
+            -f draft="$DRAFT" \
             -f prerelease=true
           echo "dispatched dev build of $SHA → $TAG (prerelease)"
 
@@ -330,27 +332,3 @@ jobs:
           TAG: ${{ steps.dev.outputs.tag }}
         run: |
           echo "DRY RUN: would dispatch release.yml for dev commit $SHA → $TAG (prerelease=true)."
-
-      - name: Prune old dev prereleases
-        # Runs whether or not we dispatched, so a backlog still drains. Only
-        # ever touches -dev.<sha> tags: a stable release is never a candidate,
-        # no matter how old.
-        if: inputs.dry_run != true
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -eu
-          # gh release list is newest-first; keep the first DEV_KEEP.
-          gh release list --repo "$OURS" --exclude-drafts -L 100 \
-            --json tagName,isPrerelease \
-            --jq "[.[] | select(.isPrerelease) | select(.tagName | test(\"-dev\\\\.\")) | .tagName] | .[${DEV_KEEP}:] | .[]" \
-            > stale.txt || true
-          if [ ! -s stale.txt ]; then
-            echo "no dev prereleases beyond the newest $DEV_KEEP."
-            exit 0
-          fi
-          while IFS= read -r tag; do
-            [ -z "$tag" ] && continue
-            echo "  deleting stale dev prerelease $tag"
-            gh release delete "$tag" --repo "$OURS" --yes --cleanup-tag
-          done < stale.txt
