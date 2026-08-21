@@ -140,6 +140,26 @@ say "Verifying checksum"
 
 # --- Install ----------------------------------------------------------------
 
+# Releases built before the switch to xz are zstd-compressed. An older Termux
+# bootstrap ships a dpkg built without libzstd, which then shells out to a
+# `zstd` binary that is not in the bootstrap either, and the install dies with
+# `member "control.tar" (zstd): No such file or directory`. Current releases are
+# xz so this never triggers, but pinning an old OPENCODE_VERSION can still land
+# a zstd deb. The ar member names are ASCII within the first ~200 bytes
+# (control.tar.* starts at byte 72), so this needs no `ar` — binutils is not in
+# the bootstrap. Matched with `case` rather than `head | grep -q`, which can
+# report failure under `pipefail` when grep short-circuits and SIGPIPEs head.
+# Best-effort: if the fetch fails, fall through and let dpkg report the problem.
+DEB_HEADER="$(head -c 200 "$TMP/$DEB" | tr -d '\0')"
+case "$DEB_HEADER" in
+  *.tar.zst*)
+    if ! command -v zstd >/dev/null 2>&1; then
+      say "Archive is zstd-compressed; installing zstd"
+      pkg install -y zstd >/dev/null 2>&1 || true
+    fi
+    ;;
+esac
+
 say "Installing via dpkg"
 dpkg -i "$TMP/$DEB"
 

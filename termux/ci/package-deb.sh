@@ -66,5 +66,18 @@ EOF
 
 mkdir -p "$OUTDIR"
 DEB="$OUTDIR/${PKG}_${VERSION}_${ARCH}.deb"
-dpkg-deb --build --root-owner-group "$STAGE" "$DEB" >/dev/null
+# Pin the compressor to xz. Never rely on the builder's default: Ubuntu patches
+# dpkg to default to zstd (Debian upstream still defaults to xz), so building on
+# an ubuntu-* runner silently emits control.tar.zst + data.tar.zst. dpkg only
+# handles zstd internally if it was built against libzstd, and otherwise shells
+# out to a `zstd` binary that no Termux bootstrap ships — so on a device with an
+# older dpkg the install dies with:
+#   unable to execute decompressing archive ... member "control.tar" (zstd):
+#   No such file or directory
+# xz is the widest intersection: Termux's own repository shipped xz debs for
+# years, so any dpkg old enough to be a problem still decompresses it, and
+# every Termux dpkg links liblzma. Level is left at dpkg's default on purpose —
+# -z9/-Sextreme would shrink the deb but inflate the decompression dictionary,
+# which is a bad trade on a low-RAM phone.
+dpkg-deb -Zxz --build --root-owner-group "$STAGE" "$DEB" >/dev/null
 echo "$DEB"
