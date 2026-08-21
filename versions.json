@@ -1,12 +1,12 @@
 {
   "$schema": "./versions.schema.json",
-  "opencode": "1.18.19",
+  "opencode": "1.18.20",
   "opentui": {
-    "core": "0.5.3-future.1",
-    "keymap": "0.5.3-future.1",
-    "solid": "0.5.3-future.1",
-    "react": "0.5.3-future.1",
-    "androidArm64Native": "0.5.3-future.1"
+    "core": "0.5.5",
+    "keymap": "0.5.5",
+    "solid": "0.5.5",
+    "react": "0.5.5",
+    "androidArm64Native": "0.5.5"
   },
   "bunTermux": {
     "installUrl": "https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh"
