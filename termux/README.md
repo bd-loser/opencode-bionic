@@ -92,7 +92,7 @@ pkg install git python build-essential clang make
 
 # Install patched bun-termux
 curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
-bun --version   # should print 1.3.14
+bun --version   # should print 1.4.0 (patched for Android)
 
 # 2. Clone this fork
 git clone https://github.com/bd-loser/opencode-bionic.git ~/opencode-bionic

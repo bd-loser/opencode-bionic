@@ -79,7 +79,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14
+          bun-version: 1.4.0
 
       - name: Sync stability of existing releases
         # Runs first, and unconditionally: even if no upstream bump is
