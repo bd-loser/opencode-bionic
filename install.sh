@@ -74,6 +74,15 @@ pick_release() {
     | jq -r "[.[] | select(.draft | not) | $1] | .[0].tag_name // empty"
 }
 
+# Fallback when api.github.com is blocked (geo-restriction / 403):
+# github.com/releases/latest redirects to the actual tag URL — no API needed.
+resolve_tag_via_redirect() {
+  local url
+  url="$(curl -fsSI -o /dev/null -w '%{redirect_url}' \
+    "https://github.com/$REPO/releases/latest" 2>/dev/null || true)"
+  printf '%s' "$url" | command grep -oE '/tag/v[^/]+$' | command sed 's|^/tag/||'
+}
+
 if [ -n "$COMMIT" ]; then
   # A dev tag embeds the short sha: v1.18.15-dev.fe82a1b6. Accept any prefix
   # the user pasted, so `OPENCODE_COMMIT=fe82a1b` works as well as the full
@@ -107,7 +116,14 @@ elif [ "$CHANNEL" = "prerelease" ]; then
   fi
 else
   say "Resolving latest stable release from $REPO…"
-  TAG="$(curl -fsSL "$API/releases/latest" | jq -r '.tag_name // empty')"
+  TAG="$(curl -fsSL "$API/releases/latest" | jq -r '.tag_name // empty')" || true
+  if [ -z "$TAG" ]; then
+    # api.github.com may be blocked (403) behind certain firewalls/ISPs.
+    # The web endpoint github.com/releases/latest redirects to the tag URL
+    # without touching the API — use that as a fallback.
+    say "API unavailable, trying web redirect fallback…"
+    TAG="$(resolve_tag_via_redirect)"
+  fi
   if [ -z "$TAG" ]; then
     red "Could not resolve latest release. Set OPENCODE_VERSION explicitly."
     exit 1
