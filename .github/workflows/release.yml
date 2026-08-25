@@ -49,11 +49,13 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          # Runner-side only (versions.ts etc). The build inside
-          # termux-docker installs bd-loser/bun-termux's patched Bionic
-          # build via install.sh — currently 1.4.0 with Android seccomp/
-          # TinyCC/shebang fixes — and embeds THAT as the compile target.
-          bun-version: 1.4.0
+          # Runner-side only (versions.ts etc), so track latest rather than
+          # pinning. The build inside termux-docker installs bd-loser/
+          # bun-termux's patched Bionic build via install.sh — which itself
+          # resolves /releases/latest from bun-termux at build time, so a
+          # rebuilt release always embeds the newest patched bun — and
+          # embeds THAT as the compile target.
+          bun-version: latest
 
       - name: Resolve version
         id: version
