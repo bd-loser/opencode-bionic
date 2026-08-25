@@ -1,18 +1,11 @@
 #!/data/data/com.termux/files/usr/bin/bash
 # rebuild-opencode.sh — one-command rebuild + reinstall on Termux.
 #
-# Under the quilt-style architecture, this repo doesn't hold an opencode
-# checkout — we fetch upstream fresh and apply patches every time. That
-# gives us a clean, reproducible tree with no drift.
-#
-# Steps: prepare-build-tree.sh → bun install → build-opencode-termux.sh →
-# install-opencode-termux.sh.
-#
 # Usage:
 #   bash termux/rebuild-opencode.sh                    # full rebuild + install
 #   bash termux/rebuild-opencode.sh --no-install       # build only
 #   bash termux/rebuild-opencode.sh --smoke-test       # 3s TUI check post-install
-#   BUILD_DIR=/path/to/tree bash termux/rebuild-opencode.sh  # reuse a tree
+#   BUILD_DIR=/path/to/tree bash termux/rebuild-opencode.sh
 
 set -euo pipefail
 
@@ -41,15 +34,11 @@ for arg in "$@"; do
   esac
 done
 
-# Prep environment (Termux only)
 if [ -z "${PREFIX:-}" ] || [ ! -d "/data/data/com.termux" ]; then
   fail "This script runs inside Termux. In CI, use termux/ci/build-in-container.sh."
 fi
 command -v bun >/dev/null 2>&1 || fail "bun not found. Install bun-termux first."
 
-# Where the built tree will live. Reusing a BUILD_DIR skips re-cloning on
-# subsequent runs — prepare-build-tree.sh detects an existing tree and
-# reuses it verbatim.
 BUILD_DIR="${BUILD_DIR:-$HOME/.cache/opencode-bionic/build}"
 
 header "Step 1: Prepare build tree (fetch upstream + apply patches)"

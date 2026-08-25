@@ -1,7 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# =============================================================================
 # run-opencode-termux.sh — dev-mode launcher (bun run against source)
-# =============================================================================
 #
 # For the compiled binary, use $PREFIX/bin/opencode instead.
 #
@@ -14,7 +12,6 @@
 #   OPENCODE_ROOT       path to opencode checkout (auto-detected)
 #   BUN_BIN             override bun binary (default: $PREFIX/bin/bun)
 #   OPENCODE_LOG_LEVEL  DEBUG|INFO|WARN|ERROR (default: INFO)
-# =============================================================================
 
 set -euo pipefail
 
@@ -65,8 +62,6 @@ echo "==========================================" >&2
 
 cd "$OPENCODE_ROOT"
 
-# opencode's dev script:
-#   bun run --cwd packages/opencode --conditions=browser src/index.ts
 exec "$BUN_BIN" run \
   --cwd packages/opencode \
   --conditions=browser \

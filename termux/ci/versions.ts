@@ -111,21 +111,8 @@ function checkCatalogOpentui(target: string): Check | null {
   }
 }
 
-// The android native .so, pinned in the build tree's root package.json.
-//
-// Declared under UPSTREAM's name, aliased to the fork's package:
-//
-//   "@opentui/core-android-arm64":
-//       "npm:@androidtui/core-android-arm64@<version>"
-//
-// That is the name packages/core/src/platform/android-native.ts imports
-// as a string literal, and the literal is what makes `bun build --compile`
-// embed libopentui.so into the binary. A computed specifier embeds
-// nothing and the binary dies on launch with "OpenTUI native library for
-// Android is missing" — which is what shipped as 0.5.1-bun.1.
-//
-// The `overrides` entry keys on the alias too, so a transitive resolution
-// from core can never pull a different native version than this one.
+// Keep the literal upstream package name so Bun embeds libopentui.so; alias it
+// to the fork and pin transitive resolution through overrides.
 function checkAndroidNative(target: string): Check | null {
   const file = path.join(target, "package.json")
   if (!existsSync(file)) return null
@@ -160,17 +147,7 @@ function checkAndroidNative(target: string): Check | null {
   }
 }
 
-// Root package.json cleanup: remove upstream install-time hooks and
-// patched-dependency entries that don't apply on Termux.
-//
-//   - scripts.postinstall runs `bun run --cwd packages/core fix-node-pty`,
-//     which needs node-pty native bindings we don't ship.
-//   - scripts.prepare runs `husky`, which we don't install.
-//   - trustedDependencies triggers native builds (esbuild, tree-sitter, etc.)
-//     that either fail or aren't needed on Termux.
-//   - patchedDependencies["@ff-labs/fff-bun@0.9.3"] references a patch
-//     upstream carries — we swap fff-bun for a lazy require instead
-//     (see termux/patches/0003-*).
+// Remove install hooks, native builds, and fff-bun patching unused on Termux.
 function checkRootConfigCleanup(target: string): Check | null {
   const file = path.join(target, "package.json")
   if (!existsSync(file)) return null

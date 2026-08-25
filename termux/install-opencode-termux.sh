@@ -1,21 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# =============================================================================
-# install-opencode-termux.sh — install the compiled opencode binary system-wide
-# =============================================================================
-#
-# WHAT THIS DOES:
-#   1. Copies the compiled binary to $PREFIX/lib/opencode/opencode
-#   2. Symlinks $PREFIX/bin/opencode -> the compiled binary
-#   3. Verifies the install with `opencode --version`
-#
-# PREREQUISITES:
-#   - Binary already compiled: bash termux/build-opencode-termux.sh
-#   - Binary at: packages/opencode/dist/opencode-android-arm64/bin/opencode
-#
-# USAGE:
-#   bash termux/install-opencode-termux.sh
-#
-# =============================================================================
+# Install a compiled opencode binary into $PREFIX.
 
 set -euo pipefail
 

@@ -1,22 +1,5 @@
 # shellcheck shell=bash
-# Source this file to load the canonical version pins from versions.json into
-# your shell script. Sets ANDROIDTUI_*_VERSION variables that termux/*.sh scripts
-# already expect.
-#
-# Usage:
-#   # near the top of your script, after `set -euo pipefail`:
-#   . "$(dirname "$0")/ci/versions.sh"      # from termux/foo.sh
-#   . "$(dirname "$0")/../ci/versions.sh"   # from termux/ci/foo.sh
-#
-# Behavior:
-#   - If versions.json exists, its values become the defaults.
-#   - Environment vars set BEFORE sourcing this file win — so ad-hoc overrides
-#     (e.g. `ANDROIDTUI_CORE_VERSION=0.4.11 bash termux/rebuild-opencode.sh`) still
-#     work, and CI still gets its pinned values.
-#   - If versions.json is missing (e.g. running outside the repo), the file is
-#     a no-op and callers use their own hardcoded fallbacks.
-#
-# Deps: jq (already required by other scripts).
+# Load canonical defaults from versions.json without replacing caller overrides.
 
 __opencode_bionic_versions_sh_loaded=1
 
@@ -44,9 +27,7 @@ __versions_json_find() {
 __versions_json_file="$(__versions_json_find || true)"
 
 __versions_dump_py() {
-  # $1 = path to versions.json
-  # Emits KEY=VALUE lines that `eval` can consume. python3 is already
-  # required by setup.sh's Termux prereqs, so no new dependency.
+  # Emit KEY=VALUE lines for eval.
   python3 - "$1" <<'PY'
 import json, sys
 v = json.load(open(sys.argv[1]))
@@ -62,9 +43,6 @@ PY
 
 if [ -n "$__versions_json_file" ] && command -v python3 >/dev/null 2>&1; then
   eval "$(__versions_dump_py "$__versions_json_file")"
-  # Only set each variable if the caller has not already set it, so:
-  #   ANDROIDTUI_CORE_VERSION=0.4.11 bash rebuild-opencode.sh
-  # still wins for local experiments.
   : "${ANDROIDTUI_CORE_VERSION:=$__V_CORE}"
   : "${ANDROIDTUI_KEYMAP_VERSION:=$__V_KEYMAP}"
   : "${ANDROIDTUI_SOLID_VERSION:=$__V_SOLID}"

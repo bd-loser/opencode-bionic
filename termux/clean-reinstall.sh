@@ -1,24 +1,5 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# =============================================================================
-# clean-reinstall.sh — nuke node_modules + bun.lock, verify, reinstall
-# =============================================================================
-#
-# WHY THIS EXISTS:
-#   On Termux's slow filesystem, `rm -rf node_modules` on 4000+ packages can
-#   take a LONG time and may appear to complete when it hasn't. If the user
-#   runs `bun install` before the deletion finishes, node_modules ends up in
-#   a broken state where only root devDeps (12 packages) are installed.
-#
-#   This script:
-#     1. Deletes node_modules + bun.lock
-#     2. VERIFIES the deletion completed (waits if needed)
-#     3. Runs bun install
-#     4. Verifies the install actually worked (package count + critical packages)
-#
-# USAGE:
-#   bash termux/clean-reinstall.sh
-#
-# =============================================================================
+# Remove dependencies and lockfile, reinstall, and verify critical packages.
 
 set -euo pipefail
 
@@ -45,15 +26,12 @@ echo "  OPENCODE_ROOT: $OPENCODE_ROOT"
 echo "  BUN_BIN:       $BUN_BIN"
 echo "=========================================="
 
-# --- Step 1: Delete node_modules + bun.lock ----------------------------------
 echo ""
 echo "=== Step 1: Delete node_modules + bun.lock ==="
 
 if [ -d node_modules ]; then
   NM_SIZE=$(du -sh node_modules 2>/dev/null | cut -f1 || echo "?")
   info "node_modules exists ($NM_SIZE) — deleting (this may take a minute on slow fs)"
-  # rm -rf is synchronous — if it returned, the directory is gone. If it
-  # failed (permissions, in-use), the error surfaces immediately.
   rm -rf node_modules || fail "could not delete node_modules (check permissions / open files)"
   [ ! -d node_modules ] || fail "node_modules still exists after rm -rf (filesystem issue?)"
   ok "node_modules deleted"
@@ -68,7 +46,6 @@ else
   ok "bun.lock already gone"
 fi
 
-# --- Step 2: Verify clean state ---------------------------------------------
 echo ""
 echo "=== Step 2: Verify clean state ==="
 
@@ -80,7 +57,6 @@ if [ -f bun.lock ]; then
 fi
 ok "clean state verified"
 
-# --- Step 3: Run bun install -------------------------------------------------
 echo ""
 echo "=== Step 3: Run bun install ==="
 echo "  (this will take 2-5 minutes on first install — 4000+ packages)"
@@ -98,16 +74,13 @@ else
   fail "bun install failed (exit $INSTALL_EXIT)"
 fi
 
-# --- Step 4: Verify install worked -------------------------------------------
 echo ""
 echo "=== Step 4: Verify install ==="
 
-# Check node_modules exists
 if [ ! -d node_modules ]; then
   fail "node_modules does not exist after install"
 fi
 
-# Count packages
 NM_COUNT=$(ls -1 node_modules 2>/dev/null | wc -l)
 info "node_modules has $NM_COUNT top-level entries"
 
@@ -128,7 +101,6 @@ fi
 
 ok "$NM_COUNT packages installed"
 
-# Check critical packages
 echo ""
 echo "=== Critical package check ==="
 CRITICAL_OK=0
@@ -143,15 +115,13 @@ for pkg in @opentui/solid @opentui/keymap solid-js effect yargs zod @androidtui/
   fi
 done
 
-# Check @ff-labs/fff-bun — this WILL be missing on Termux (os restriction)
-# That's OK — Patch 1f handles it in source.
+# Optional on Android; absence is handled by the lazy-load patch.
 if [ -f "node_modules/@ff-labs/fff-bun/package.json" ]; then
   ok "@ff-labs/fff-bun (unexpected on Termux — os restriction should skip it)"
 else
-  info "@ff-labs/fff-bun: NOT installed (expected on Termux — Patch 1f handles this)"
+  info "@ff-labs/fff-bun: NOT installed (expected on Android)"
 fi
 
-# Check native .so
 SO_PATH="node_modules/@androidtui/core-android-arm64/libopentui.so"
 if [ -f "$SO_PATH" ]; then
   ok "libopentui.so: present"

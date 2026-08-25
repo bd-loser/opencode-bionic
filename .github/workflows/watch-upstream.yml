@@ -1,36 +1,7 @@
 name: watch-upstream
 
-# Polls anomalyco/opencode (fka sst/opencode) for new work every 12 hours.
-# Three responsibilities:
-#
-# 1. Bump: if upstream has a RELEASE version we haven't shipped, bump
-#    versions.json, commit to main, and dispatch release.yml. The dispatch
-#    mirrors upstream's `prerelease` flag verbatim — if upstream shipped it
-#    stable, we ship it stable (Latest); if upstream shipped it as a
-#    prerelease, so do we.
-#
-# 2. Dev: otherwise, if upstream's `dev` branch has COMMITS we haven't built,
-#    dispatch a build of that exact commit as a prerelease, tagged
-#    v<version>-dev.<short-sha>. Never Latest — install.sh's default channel
-#    follows /releases/latest, so a dev build can only reach users who ask
-#    for it by name (OPENCODE_CHANNEL=prerelease or OPENCODE_COMMIT=<sha>).
-#
-#    A pending stable bump wins: step 1 and step 2 never dispatch in the same
-#    run, because the stable build is the one users actually get.
-#
-# 3. Promote: for tags we've already released, sync our `prerelease` flag
-#    to upstream's. Handles the case where upstream promoted a prerelease
-#    to stable (or demoted a stable to prerelease) after we mirrored it.
-#    Users on install.sh follow /releases/latest, which excludes prereleases,
-#    so promotion here is what actually moves users onto a new version.
-#
-#    Dev builds are exempt: their tags don't exist upstream, so the lookup
-#    misses and they keep the prerelease flag they were born with.
-#
-# Inputs:
-#   dry_run         — report what would happen; don't commit or dispatch
-#   force_version   — force bump to this upstream version (skip auto-detect)
-#   skip_dev        — don't build dev commits this run (stable bumps only)
+# Mirrors upstream releases and stability, or builds the latest unseen dev
+# commit when no release bump is pending.
 
 on:
   schedule:
@@ -82,14 +53,10 @@ jobs:
           bun-version: 1.4.0
 
       - name: Sync stability of existing releases
-        # Runs first, and unconditionally: even if no upstream bump is
-        # pending, our prerelease flags may drift from upstream (e.g.
-        # upstream promoted a version to stable after we mirrored it).
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
-          # Get last 20 of our releases and their prerelease flags.
           gh release list --repo "$OURS" -L 20 \
               --json tagName,isPrerelease,isDraft --jq '.[]' > ours.jsonl || true
           if [ ! -s ours.jsonl ]; then
@@ -97,13 +64,11 @@ jobs:
             exit 0
           fi
           flipped=0
-          # Iterate deterministically. jq -c produces one JSON object per line.
           while IFS= read -r row; do
             tag="$(echo "$row" | jq -r .tagName)"
             our_pre="$(echo "$row" | jq -r .isPrerelease)"
             our_draft="$(echo "$row" | jq -r .isDraft)"
-            [ "$our_draft" = "true" ] && continue  # never touch drafts
-            # Look up upstream by exact tag. Missing → skip silently.
+            [ "$our_draft" = "true" ] && continue
             up_json="$(gh release view "$tag" --repo "$UPSTREAM" --json isPrerelease 2>/dev/null || true)"
             [ -z "$up_json" ] && continue
             up_pre="$(echo "$up_json" | jq -r .isPrerelease)"
@@ -181,11 +146,7 @@ jobs:
           git --no-pager diff --stat
 
       - name: Preflight — patches apply cleanly against new upstream
-        # Root cause we're protecting against: if upstream renames or reformats
-        # a file we patch (bunfig.toml, fff.bun.ts, build-termux.ts), git am
-        # --3way fails, and the release run would fail hours later. Fail fast
-        # HERE instead so the maintainer sees a red bump job with the failing
-        # patch pointed out, and can regenerate patches before dispatching.
+        # Catch patch drift before dispatching the release build.
         if: steps.upstream.outputs.changed == 'true'
         env:
           NEW: ${{ steps.upstream.outputs.latest }}
@@ -248,13 +209,6 @@ jobs:
         run: |
           echo "DRY RUN: would bump $OLD → $NEW, commit to main, and dispatch release.yml with prerelease=$UP_PRE."
 
-      # ── dev channel ──────────────────────────────────────────────────────
-      #
-      # Only reached when there is no stable bump pending. A stable release
-      # and a dev build of the same tree are the same binary as far as users
-      # are concerned, and dispatching both would race two 45-minute builds
-      # against each other for no gain.
-
       - name: Detect new upstream dev commits
         id: dev
         if: steps.upstream.outputs.changed != 'true' && inputs.skip_dev != true
@@ -287,13 +241,7 @@ jobs:
           REL_TAG="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 20 \
             --json tagName --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0].tagName // empty')"
           if [ -n "$REL_TAG" ]; then
-            # The commits endpoint takes any ref and returns the COMMIT it
-            # resolves to, dereferencing an annotated tag on the way. Going
-            # through git/ref/tags instead needs a second call for annotated
-            # tags — and on a lightweight tag (which is what upstream uses)
-            # that second call 404s, and `gh api --jq` prints the error body
-            # to stdout, so the sha silently becomes a JSON blob and this
-            # check can never match.
+            # The commits endpoint dereferences both lightweight and annotated tags.
             REL_SHA="$(gh api "repos/$UPSTREAM/commits/$REL_TAG" --jq .sha 2>/dev/null || true)"
             if [ "$REL_SHA" = "$SHA" ]; then
               echo "build=false" >> "$GITHUB_OUTPUT"

@@ -1,51 +1,6 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# =============================================================================
-# test-opentui-isolated.sh — smoke test for @androidtui/core on Termux
-# =============================================================================
-#
-# WHAT THIS DOES:
-#   Creates a minimal test project (3 deps only, no opencode) and verifies
-#   that @androidtui/core + @opentui/solid work on Termux. This isolates
-#   the opentui FFI layer from opencode's 2000+ dependencies.
-#
-# WHY:
-#   If opencode fails to start, we need to know whether the failure is in:
-#     (a) opentui itself (FFI, .so loading, MTE)  → this test will fail too
-#     (b) @opentui/solid API compat with @androidtui/core  → this test will fail
-#     (c) opencode's own code (bun-pty, sqlite, etc.)  → this test will PASS
-#
-#   If this test passes, we know opentui works and the problem is in opencode.
-#   If this test fails, we know to fix opentui first (or fork @opentui/solid).
-#
-# WHAT IT TESTS:
-#   1. `bun install` succeeds (downloads @androidtui/core +
-#      @androidtui/core-android-arm64 + @opentui/solid)
-#   2. `@androidtui/core` can be imported (JS loads OK)
-#   3. `createCliRenderer()` works (FFI loads libopentui.so OK, MTE doesn't
-#      crash, renderer starts)
-#   4. `@opentui/solid`'s `render()` works (Solid reconciler + opentui core
-#      API compat — if 0.4.10 solid breaks with 0.4.10 core, this fails)
-#   5. A `<box>` renders with a `<text>` child (basic renderable tree works)
-#   6. Renderer destroys cleanly (no exit race condition)
-#
-# USAGE:
-#   bash test-opentui-isolated.sh              # run in ~/opentui-test
-#   bash test-opentui-isolated.sh /path/to/dir # run in specific dir
-#
-# EXPECTED OUTPUT:
-#   If everything works, you'll see a bordered box with "Hello opentui!" for
-#   3 seconds, then the renderer exits cleanly.
-#
-#   If FFI fails, you'll see an error like:
-#     "opentui is not supported on the current platform"  → .so not found
-#     "undefined symbol: opentui_*"                         → ABI mismatch
-#     SIGABRT                                               → MTE/FFI crash
-#
-#   If @opentui/solid API compat fails, you'll see:
-#     "Cannot find export X in @androidtui/core"  → API break
-#     "TypeError: ... is not a function"              → renamed/removed API
-#
-# =============================================================================
+# Isolate @androidtui/core and @opentui/solid from opencode's dependency tree.
+# Usage: bash test-opentui-isolated.sh [test-directory]
 
 set -euo pipefail
 
@@ -75,7 +30,6 @@ echo "  BUN_BIN:  $BUN_BIN"
 echo "  PREFIX:   ${PREFIX:-<unset>}"
 echo "=========================================="
 
-# --- Verify prerequisites ----------------------------------------------------
 if [ ! -x "$BUN_BIN" ]; then
   fail "bun not found at $BUN_BIN"
   echo "Install bun-termux:" >&2
@@ -83,17 +37,13 @@ if [ ! -x "$BUN_BIN" ]; then
   exit 1
 fi
 
-# --- Create test project -----------------------------------------------------
 echo ""
 echo "=== Creating test project ==="
 rm -rf "$TEST_DIR"
 mkdir -p "$TEST_DIR"
 cd "$TEST_DIR"
 
-# Minimal package.json — only 3 deps
-# Clean v2 approach: all @androidtui packages published at the same version, so we use
-# npm: aliases directly. No overrides needed — @androidtui/solid
-# directly depends on @androidtui/core in its own dependencies.
+# Use npm aliases so the Android fork satisfies the upstream package names.
 cat > package.json <<EOF
 {
   "name": "opentui-test",
@@ -130,7 +80,6 @@ minimumReleaseAge = 0
 EOF
 ok "bunfig.toml created (solid preload + minimumReleaseAge = 0 for fresh packages)"
 
-# --- bun install -------------------------------------------------------------
 echo ""
 echo "=== Running bun install ==="
 if "$BUN_BIN" install 2>&1 | sed 's/^/  /'; then
@@ -140,7 +89,6 @@ else
   exit 1
 fi
 
-# --- Verify packages installed -----------------------------------------------
 echo ""
 echo "=== Verifying packages ==="
 
@@ -188,10 +136,7 @@ else
   exit 1
 fi
 
-# CRITICAL: verify @opentui/solid does NOT have a nested upstream @opentui/core
-# Since 0.4.10, @androidtui/solid directly depends on @androidtui/core
-# via npm: alias — so there's no nested upstream copy to worry about.
-# But we still check for belt-and-suspenders safety.
+# Ensure Solid does not resolve a nested upstream core.
 NESTED_CORE="node_modules/@opentui/solid/node_modules/@opentui/core"
 if [ -d "$NESTED_CORE" ]; then
   NESTED_NAME=$("$BUN_BIN" -e "console.log(require('./$NESTED_CORE/package.json').name)" 2>/dev/null || echo "?")
@@ -207,7 +152,6 @@ else
   ok "no nested @opentui/core inside @opentui/solid (hoisted — override working)"
 fi
 
-# --- Create test app ---------------------------------------------------------
 echo ""
 echo "=== Creating test app ==="
 
@@ -245,7 +189,6 @@ setTimeout(() => {
 APPEOF
 ok "app.tsx created"
 
-# --- Run test ----------------------------------------------------------------
 echo ""
 echo "=== Running test (3 second render) ==="
 echo ""

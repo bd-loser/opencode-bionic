@@ -63,19 +63,13 @@ case "$CHANNEL" in
     ;;
 esac
 
-# Newest release matching a jq filter, from the paginated list. /releases is
-# ordered newest-first and, unlike /releases/latest, includes prereleases.
-#
-# `latest` is a GitHub-computed pointer that skips prereleases entirely — it
-# is exactly right for the stable channel and useless for the other two, so
-# both of those read the full list instead.
+# /releases is newest-first and includes prereleases.
 pick_release() {
   curl -fsSL "$API/releases?per_page=100" \
     | jq -r "[.[] | select(.draft | not) | $1] | .[0].tag_name // empty"
 }
 
-# Fallback when api.github.com is blocked (geo-restriction / 403):
-# github.com/releases/latest redirects to the actual tag URL — no API needed.
+# Avoid api.github.com when it is blocked by the user's network.
 resolve_tag_via_redirect() {
   local url
   url="$(curl -fsSI -o /dev/null -w '%{redirect_url}' \
@@ -118,9 +112,6 @@ else
   say "Resolving latest stable release from $REPO…"
   TAG="$(curl -fsSL "$API/releases/latest" | jq -r '.tag_name // empty')" || true
   if [ -z "$TAG" ]; then
-    # api.github.com may be blocked (403) behind certain firewalls/ISPs.
-    # The web endpoint github.com/releases/latest redirects to the tag URL
-    # without touching the API — use that as a fallback.
     say "API unavailable, trying web redirect fallback…"
     TAG="$(resolve_tag_via_redirect)"
   fi

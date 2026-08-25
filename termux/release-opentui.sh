@@ -1,40 +1,9 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# =============================================================================
-# release-opentui.sh — orchestrate a full @androidtui opentui release
-# =============================================================================
-#
-# WHAT THIS DOES:
-#   Orchestrates publishing all 5 @androidtui opentui packages in dependency
-#   order. Designed to run from your Termux phone (or any machine with
-#   the GitHub CLI / curl + a GH token).
-#
-#   The actual builds happen in GitHub Actions (ubuntu-22.04). This script
-#   just triggers the workflows in the right order and verifies each
-#   package lands on npm before triggering the next.
-#
-# PUBLISH ORDER (strict — each depends on the previous):
-#   1. @androidtui/core-android-arm64  (.so — via package-prebuilt.yml)
-#   2. @androidtui/core                (JS — via publish-js-library.yml)
-#   3. @androidtui/react               (JS — via publish-js-library.yml)
-#   4. @androidtui/solid               (JS — via publish-solid.yml)
-#   5. @androidtui/keymap              (JS — via publish-keymap.yml)
-#
-# PREREQUISITES:
-#   - GH_TOKEN env var set with repo + workflow permissions
-#   - All version bumps already committed + pushed to bd-loser/opentui main
-#   - packages/core/prebuilt/aarch64-android/libopentui.so already committed
-#     (only needed if the .so changed — for version-only bumps, the existing
-#     .so gets repackaged at the new version)
-#
-# USAGE:
-#   GH_TOKEN=ghp_xxx bash release-opentui.sh 0.4.10
-#   GH_TOKEN=ghp_xxx bash release-opentui.sh 0.4.10 --skip-so   # .so unchanged
-#
-# =============================================================================
+# Publish @androidtui packages in dependency order through GitHub Actions.
+# Usage: GH_TOKEN=... bash release-opentui.sh <version> [--skip-so]
 
 set -euo pipefail
 
-# ── Colors ───────────────────────────────────────────────────────────────────
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
@@ -49,7 +18,6 @@ warn()  { echo -e "  ${YELLOW}[WARN]${NC} $*"; }
 info()  { echo -e "  ${MUTED}       $*${NC}"; }
 header(){ echo -e "\n${BOLD}${BLUE}=== $* ===${NC}"; }
 
-# ── Args ─────────────────────────────────────────────────────────────────────
 VERSION="${1:-}"
 SKIP_SO=false
 [ "${2:-}" = "--skip-so" ] && SKIP_SO=true
@@ -68,7 +36,6 @@ echo "  repo:     $REPO"
 echo "  skip .so: $SKIP_SO"
 echo "=========================================="
 
-# ── Helper: trigger a workflow and wait for completion ───────────────────────
 trigger_workflow() {
   local workflow_file="$1"
   local inputs_json="$2"
@@ -76,7 +43,6 @@ trigger_workflow() {
 
   header "Trigger: $label"
 
-  # Dispatch
   local dispatch_resp
   dispatch_resp=$(curl -s -w "\n%{http_code}" \
     -X POST \
@@ -92,7 +58,6 @@ trigger_workflow() {
   fi
   ok "dispatched"
 
-  # Wait for the run to appear (poll runs list)
   info "waiting for run to start..."
   local run_id=""
   for i in $(seq 1 12); do
@@ -149,7 +114,6 @@ for run in data.get('workflow_runs', []):
   ok "$label workflow succeeded"
 }
 
-# ── Helper: verify a package version exists on npm ───────────────────────────
 verify_npm() {
   local pkg="$1"
   local ver="$2"
@@ -170,9 +134,6 @@ verify_npm() {
   fail "$label: ${pkg}@${ver} NOT found on npm after 200s"
 }
 
-# =============================================================================
-# Step 1: Publish .so (optional — skip if .so unchanged)
-# =============================================================================
 if $SKIP_SO; then
   header "Step 1: Publish .so (SKIPPED — --skip-so)"
   info "the existing .so will be repackaged at $VERSION by package-prebuilt.yml"
@@ -183,28 +144,16 @@ else
   verify_npm "@androidtui/core-android-arm64" "$VERSION" "Step 1"
 fi
 
-# =============================================================================
-# Step 2: Publish core + react (single workflow publishes both)
-# =============================================================================
 trigger_workflow "publish-js-library.yml" "{\"version\":\"${VERSION}\",\"publish\":\"true\"}" "Publish JS Library (core + react)"
 verify_npm "@androidtui/core" "$VERSION" "Step 2a"
 verify_npm "@androidtui/react" "$VERSION" "Step 2b"
 
-# =============================================================================
-# Step 3: Publish solid
-# =============================================================================
 trigger_workflow "publish-solid.yml" "{\"version\":\"${VERSION}\",\"publish\":\"true\"}" "Publish opentui-solid"
 verify_npm "@androidtui/solid" "$VERSION" "Step 3"
 
-# =============================================================================
-# Step 4: Publish keymap
-# =============================================================================
 trigger_workflow "publish-keymap.yml" "{\"version\":\"${VERSION}\",\"publish\":\"true\"}" "Publish opentui-keymap"
 verify_npm "@androidtui/keymap" "$VERSION" "Step 4"
 
-# =============================================================================
-# Summary
-# =============================================================================
 header "Release ${VERSION} complete!"
 
 echo ""

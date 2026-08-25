@@ -49,12 +49,7 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          # Runner-side only (versions.ts etc), so track latest rather than
-          # pinning. The build inside termux-docker installs bd-loser/
-          # bun-termux's patched Bionic build via install.sh — which itself
-          # resolves /releases/latest from bun-termux at build time, so a
-          # rebuilt release always embeds the newest patched bun — and
-          # embeds THAT as the compile target.
+          # The container separately installs the latest patched Bionic Bun.
           bun-version: latest
 
       - name: Resolve version
@@ -160,14 +155,7 @@ jobs:
           if [ "$DRAFT" = "true" ]; then FLAGS="$FLAGS --draft"; fi
           if [ "$PRERELEASE" = "true" ]; then FLAGS="$FLAGS --prerelease"; fi
           NOTES_FILE="$RUNNER_TEMP/release-notes.md"
-          # RELEASE names this build's artifacts and tag; VERSION says which
-          # upstream opencode it was built from. They differ on a dev build,
-          # where the notes have to name the commit — "v1.18.15" alone would
-          # be a lie about a tree several commits past that tag.
-          #
-          # A prerelease also needs a different install line: bare install.sh
-          # resolves /releases/latest, which skips prereleases, so it would
-          # quietly install something else. OPENCODE_VERSION pins it.
+          # RELEASE includes the commit suffix for dev builds.
           if [ -n "$REF" ]; then
             SOURCE="Built from [\`$(printf '%s' "$REF" | cut -c1-8)\`](https://github.com/anomalyco/opencode/commit/$REF) — upstream reports itself as v$VERSION at that commit."
             UPSTREAM_DESCRIPTION="$(gh api "repos/anomalyco/opencode/commits/$REF" --jq '.commit.message // empty' 2>/dev/null || true)"
