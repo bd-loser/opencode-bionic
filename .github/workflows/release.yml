@@ -49,7 +49,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          # The container separately installs the latest patched Bionic Bun.
+          # The container separately installs the pinned Bionic Bun
+          # (bunTermux.version in versions.json).
           bun-version: latest
 
       - name: Resolve version
