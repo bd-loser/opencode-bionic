@@ -14,7 +14,7 @@ new file mode 100644
 index 0000000..f5ad162
 --- /dev/null
 +++ b/packages/opencode/script/build-termux.ts
-@@ -0,0 +1,152 @@
+@@ -0,0 +1,157 @@
 +#!/usr/bin/env bun
 +// build-termux.ts — compile opencode into a single binary for Termux/Android
 +// Uses the matching target so Bun embeds the current patched runtime.
@@ -100,7 +100,12 @@ index 0000000..f5ad162
 +  format: "esm",
 +  minify: true,
 +  sourcemap: sourcemapsFlag ? "linked" : "none",
-+  splitting: true,
++  // Bun >=1.4.1 on Bionic emits broken cross-chunk bindings with splitting
++  // (oven-sh/bun#42837): compiled binaries throw
++  // "TypeError: undefined is not an object (evaluating 'a.name')" on every
++  // prompt. splitting:false is the confirmed workaround; cost is only a
++  // larger binary.
++  splitting: false,
 +  compile: {
 +    autoloadBunfig: false,
 +    autoloadDotenv: false,

@@ -8,7 +8,7 @@ on:
         required: false
         default: ""
       upstream_ref:
-        description: "Build from this upstream branch/commit (e.g. 'dev') instead of a release tag. Releases as <version>-dev.<sha>, always a prerelease."
+        description: "Build from this upstream branch/commit/tag (e.g. 'dev', 'v1.18.31') instead of the versions.json tag. Without 'version': releases as <version>-dev.<sha>, always a prerelease. With 'version': rebuild ref but publish that exact version (hotfix re-ships)."
         required: false
         default: ""
       draft:
@@ -73,10 +73,18 @@ jobs:
             SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
             VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
               --jq .content | base64 -d | jq -r .version)"
-            RELEASE="${VERSION}-dev.${SHORT}"
-            # A build off a moving branch is never "Latest": install.sh
-            # follows /releases/latest, which skips prereleases.
-            PRERELEASE=true
+            if [ -n "$INPUT_VERSION" ]; then
+              # Hotfix rebuild: an explicit version overrides the ref-derived
+              # tag, e.g. upstream_ref=v1.18.31 + version=1.18.31.1 re-ships
+              # the stable tree when only our toolchain (bun/opentui pins)
+              # changed. Stability then follows the prerelease input.
+              RELEASE="${INPUT_VERSION#v}"
+            else
+              RELEASE="${VERSION}-dev.${SHORT}"
+              # A build off a moving branch is never "Latest": install.sh
+              # follows /releases/latest, which skips prereleases.
+              PRERELEASE=true
+            fi
             echo "ref=$SHA" >> "$GITHUB_OUTPUT"
             echo "Building $UPSTREAM@$SHA (upstream says $VERSION), releasing as v$RELEASE"
           else

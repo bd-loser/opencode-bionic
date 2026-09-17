@@ -38,6 +38,7 @@ print(f"__V_SOLID={o['solid']}")
 print(f"__V_REACT={o['react']}")
 print(f"__V_ANDROID={o['androidArm64Native']}")
 print(f"__V_OPENCODE={v['opencode']}")
+print(f"__V_BUN={v['bunTermux']['version']}")
 PY
 }
 
@@ -49,9 +50,11 @@ if [ -n "$__versions_json_file" ] && command -v python3 >/dev/null 2>&1; then
   : "${ANDROIDTUI_REACT_VERSION:=$__V_REACT}"
   : "${ANDROIDTUI_ANDROID_VERSION:=$__V_ANDROID}"
   : "${OPENCODE_VERSION_PIN:=$__V_OPENCODE}"
+  : "${BUN_TERMUX_VERSION:=$__V_BUN}"
   export ANDROIDTUI_CORE_VERSION ANDROIDTUI_KEYMAP_VERSION ANDROIDTUI_SOLID_VERSION \
-         ANDROIDTUI_REACT_VERSION ANDROIDTUI_ANDROID_VERSION OPENCODE_VERSION_PIN
-  unset __V_CORE __V_KEYMAP __V_SOLID __V_REACT __V_ANDROID __V_OPENCODE
+         ANDROIDTUI_REACT_VERSION ANDROIDTUI_ANDROID_VERSION OPENCODE_VERSION_PIN \
+         BUN_TERMUX_VERSION
+  unset __V_CORE __V_KEYMAP __V_SOLID __V_REACT __V_ANDROID __V_OPENCODE __V_BUN
 fi
 
 unset __versions_json_find __versions_dump_py __versions_json_file

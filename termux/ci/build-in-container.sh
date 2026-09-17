@@ -53,7 +53,25 @@ echo "deb https://packages.termux.dev/apt/termux-main stable main" \
 apt update -y
 apt install -y git python curl dpkg
 
-curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
+# Install the bun-termux version pinned in versions.json, not whatever
+# /releases/latest happens to point at — the "latest" marker drifting to a
+# regressed build is exactly how v1.18.31 shipped a broken chunk graph
+# (Bun 1.4.1 splitting bug, oven-sh/bun#42837).
+BUN_TERMUX_VERSION="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['bunTermux']['version'])")"
+BUN_DEB="bun_${BUN_TERMUX_VERSION}_aarch64.deb"
+BUN_TMP_DEB="$(mktemp)"
+echo "→ installing bun-termux $BUN_TERMUX_VERSION"
+curl -fsSL -o "$BUN_TMP_DEB" \
+  "https://github.com/bd-loser/bun-termux/releases/download/v${BUN_TERMUX_VERSION}/${BUN_DEB}"
+dpkg -i "$BUN_TMP_DEB"
+rm -f "$BUN_TMP_DEB"
+INSTALLED="$(bun --version)"
+if [ "$INSTALLED" != "${BUN_TERMUX_VERSION%%-patched}" ]; then
+  echo "error: expected bun ${BUN_TERMUX_VERSION}, got $INSTALLED" >&2
+  exit 1
+fi
+bun --version
 
 BUILD_ROOT="$HOME/opencode"
 rm -rf "$BUILD_ROOT"

@@ -30,7 +30,7 @@ type Versions = {
     react: string
     androidArm64Native: string
   }
-  bunTermux: { installUrl: string }
+  bunTermux: { version: string; installUrl: string }
 }
 
 const versions: Versions = JSON.parse(readFileSync(VERSIONS_FILE, "utf8"))
@@ -260,7 +260,7 @@ function applyReadme(): boolean {
     `| opencode (upstream) | \`${versions.opencode}\` |\n` +
     `| \`@opentui/{core,keymap,solid}\` (JS, via \`@androidtui\`) | \`${versions.opentui.core}\` |\n` +
     `| \`@androidtui/core-android-arm64\` (native \`.so\`) | \`${versions.opentui.androidArm64Native}\` |\n` +
-    `| \`bun-termux\` runtime | tracked at [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) |`
+    `| \`bun-termux\` runtime | \`${versions.bunTermux.version}\` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |`
   let out = orig.replace(
     /<!-- versions:badges -->[\s\S]*?<!-- \/versions:badges -->/,
     `<!-- versions:badges -->\n${badges}\n<!-- /versions:badges -->`,
@@ -296,6 +296,7 @@ async function main() {
     console.log(`OPENTUI_SOLID=${versions.opentui.solid}`)
     console.log(`OPENTUI_REACT=${versions.opentui.react}`)
     console.log(`OPENTUI_NATIVE_ANDROID_ARM64=${versions.opentui.androidArm64Native}`)
+    console.log(`BUN_TERMUX_VERSION=${versions.bunTermux.version}`)
     console.log(`BUN_TERMUX_INSTALL_URL=${versions.bunTermux.installUrl}`)
     return
   }
