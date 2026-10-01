@@ -142,7 +142,7 @@ picks up the bump on its next run.
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `1.18.33` |
+| opencode (upstream) | `1.18.34` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.11` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.5.11` |
 | `bun-termux` runtime | `1.4.2-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
