@@ -8,9 +8,15 @@ on:
         required: false
         default: ""
       upstream_ref:
-        description: "Build from this upstream branch/commit/tag (e.g. 'dev', 'v1.18.31') instead of the versions.json tag. Without 'version': releases as <version>-dev.<sha>, always a prerelease. With 'version': rebuild ref but publish that exact version (hotfix re-ships)."
+        description: "Build from this upstream branch/commit/tag (e.g. 'dev', 'v1.18.31') instead of the versions.json tag. Without 'version': releases as <version>-<channel>.<sha>, always a prerelease. With 'version': rebuild ref but publish that exact version (hotfix re-ships)."
         required: false
         default: ""
+      channel:
+        description: "Release channel (mirrors upstream's npm dist-tags)"
+        required: false
+        type: choice
+        options: [stable, beta, dev]
+        default: stable
       draft:
         description: "Create as draft release (safer default; publish manually)"
         type: boolean
@@ -29,6 +35,10 @@ on:
         type: string
         required: false
         default: ""
+      channel:
+        type: string
+        required: false
+        default: stable
       draft:
         type: boolean
         default: true
@@ -60,6 +70,7 @@ jobs:
           INPUT_VERSION: ${{ inputs.version }}
           INPUT_UPSTREAM_REF: ${{ inputs.upstream_ref }}
           INPUT_PRERELEASE: ${{ inputs.prerelease }}
+          CHANNEL: ${{ inputs.channel || 'stable' }}
         run: |
           set -eu
           UPSTREAM=anomalyco/opencode
@@ -94,7 +105,10 @@ jobs:
               # changed. Stability then follows the prerelease input.
               RELEASE="${INPUT_VERSION#v}"
             else
-              RELEASE="${VERSION}-dev.${SHORT}"
+              # Rolling-branch build: suffix with the channel + commit, e.g.
+              # v2.0.26-dev.d21b0790 / v2.0.6-beta.9b4ec571. Upstream labels
+              # these lines with npm dist-tags beta/dev; we mirror the names.
+              RELEASE="${VERSION}-${CHANNEL}.${SHORT}"
               # A build off a moving branch is never "Latest": install.sh
               # follows /releases/latest, which skips prereleases.
               PRERELEASE=true
@@ -102,6 +116,10 @@ jobs:
             echo "ref=$SHA" >> "$GITHUB_OUTPUT"
             echo "Building $UPSTREAM@$SHA (upstream says $VERSION), releasing as v$RELEASE"
           else
+            if [ "$CHANNEL" != "stable" ]; then
+              echo "error: channel=$CHANNEL requires upstream_ref (a rolling branch build)" >&2
+              exit 1
+            fi
             if [ -n "$INPUT_VERSION" ]; then
               VERSION="${INPUT_VERSION#v}"
             else
@@ -120,6 +138,7 @@ jobs:
           echo "release=$RELEASE" >> "$GITHUB_OUTPUT"
           echo "tag=v$RELEASE" >> "$GITHUB_OUTPUT"
           echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
 
       - name: Verify tag is unused
         env:
@@ -145,7 +164,7 @@ jobs:
           # OPENCODE_UPSTREAM_REF decides what gets cloned when they differ.
           OPENCODE_VERSION: ${{ steps.version.outputs.release }}
           OPENCODE_UPSTREAM_REF: ${{ steps.version.outputs.ref }}
-          OPENCODE_CHANNEL: stable
+          OPENCODE_CHANNEL: ${{ steps.version.outputs.channel }}
         run: bash termux/ci/build-on-runner.sh
 
       - name: Package .deb
@@ -169,6 +188,7 @@ jobs:
           VERSION: ${{ steps.version.outputs.version }}
           RELEASE: ${{ steps.version.outputs.release }}
           REF: ${{ steps.version.outputs.ref }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
           DRAFT: ${{ inputs.draft }}
           PRERELEASE: ${{ steps.version.outputs.prerelease }}
         run: |
@@ -193,8 +213,8 @@ jobs:
             INSTALL_ENV=""
           fi
           cat > "$NOTES_FILE" <<EOF
-          opencode v$RELEASE — Termux/Bionic aarch64 build.
-
+          opencode v$RELEASE — Termux/Bionic aarch64 build ($CHANNEL channel).
+          
           $SOURCE
           EOF
           if [ -n "$UPSTREAM_DESCRIPTION" ]; then
@@ -226,8 +246,10 @@ jobs:
           EOF
           # $FLAGS is intentionally word-split (--draft / --prerelease).
           # shellcheck disable=SC2086
+          TITLE="v$RELEASE"
+          if [ "$CHANNEL" != "stable" ]; then TITLE="$TITLE ($CHANNEL)"; fi
           gh release create "$TAG" $FLAGS \
-            --title "v$RELEASE" \
+            --title "$TITLE" \
             --notes-file "$NOTES_FILE" \
             dist/opencode_${RELEASE}_aarch64.deb \
             dist/opencode \
