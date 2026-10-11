@@ -38,7 +38,7 @@ if ! git -C "$TARGET" am --3way "${PATCHES[@]}"; then
   echo "" >&2
   echo "error: git am failed, trying patch -p1..." >&2
   for p in "${PATCHES[@]}"; do
-    patch -d "$TARGET" -p1 -i "$p" || {
+    patch -d "$TARGET" -p1 --forward -i "$p" || {
       echo "" >&2
       echo "error: patch -p1 also failed for $(basename "$p")." >&2
       echo "" >&2
