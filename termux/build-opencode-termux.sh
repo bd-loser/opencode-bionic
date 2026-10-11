@@ -46,7 +46,7 @@ echo "  BUN_BIN:       $BUN_BIN"
 echo "  BUN version:   $($BUN_BIN --version)"
 echo "=========================================="
 
-info "Running build-termux.ts..."
+info "Running script/build.ts..."
 
 cd "$OPENCODE_ROOT/packages/cli"
 
@@ -56,10 +56,10 @@ BUILD_EXIT=$?
 set -e
 
 if [ "$BUILD_EXIT" -ne 0 ]; then
-  fail "build-termux.ts failed (exit $BUILD_EXIT)"
+  fail "script/build.ts failed (exit $BUILD_EXIT)"
 fi
 
-BINARY_PATH="$OPENCODE_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
+BINARY_PATH="$OPENCODE_ROOT/packages/cli/dist/opencode-linux-arm64/bin/opencode"
 
 if [ ! -f "$BINARY_PATH" ]; then
   fail "Binary not found at $BINARY_PATH"

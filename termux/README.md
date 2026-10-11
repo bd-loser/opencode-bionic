@@ -37,14 +37,12 @@ opencode-bionic/                   ← this repo
 └── termux/
     ├── README.md                  ← this file
     ├── patches/                   ← quilt-style unified diffs
-    │   ├── 0001-termux-add-androidtui-to-minimumReleaseAgeExcludes.patch
-    │   ├── 0002-termux-add-build-termux.ts-compile-script.patch
-    │   └── 0003-termux-lazy-load-ff-labs-fff-bun.patch
+    │   ├── 0001-termux-2x-port.patch
     ├── ci/                        ← build pipeline
     │   ├── versions.ts            ← config-delta applier; canonical version parser
     │   ├── versions.sh            ← same, but sourceable by bash scripts
     │   ├── fetch-upstream.sh      ← clones anomalyco/opencode at a pinned tag
-    │   ├── apply-patches.sh       ← git am --3way termux/patches/*.patch
+    │   ├── apply-patches.sh       ← patch -p1 --forward termux/patches/*.patch
     │   ├── refresh-patches.sh     ← regenerates patches from a build tree
     │   ├── prepare-build-tree.sh  ← chains fetch + versions + apply
     │   ├── build-on-runner.sh     ← GitHub Actions entrypoint (spawns docker)
@@ -180,10 +178,10 @@ CI reads the same file; there is no other place versions are tracked.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `git am --3way` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
-| `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `build-termux.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
+| `patch -p1 --forward` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
+| `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `packages/cli/script/build.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
 | `libopentui.so` extraction fails from bunfs | Native `.so` version drift, or the compiled binary shipped with the wrong `.so` | Bump `opentui.androidArm64Native` in `versions.json` and rebuild |
-| `Cannot find module '@ff-labs/fff-bun'` at runtime | Patch 0003 didn't apply | `git am --abort` in the build tree; re-run `apply-patches.sh` |
+| `Cannot find module '@ff-labs/fff-bun'` at runtime | The fff.bun.ts hunk of patch 0001 didn't apply | Re-run `apply-patches.sh` in the build tree and check for `.rej` files |
 
 ## Design notes
 

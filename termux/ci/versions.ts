@@ -13,7 +13,7 @@
 // optionalDependencies, plugin peer bumps) is expressed programmatically
 // here rather than as a patch because the shape survives upstream
 // reformatting. The "source delta" (bunfig.toml, fff.bun.ts,
-// build-termux.ts) lives in termux/patches/ as unified diffs.
+// packages/cli/script/build.ts) lives in termux/patches/ as unified diffs.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
