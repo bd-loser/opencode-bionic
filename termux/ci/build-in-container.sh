@@ -51,7 +51,15 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg rustc
+apt install -y git python curl dpkg
+
+# Install Rust via rustup (termux-docker apt doesn't carry rustc/cargo).
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "→ installing Rust via rustup"
+  curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
+  . "$HOME/.cargo/env"
+fi
+cargo --version
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
