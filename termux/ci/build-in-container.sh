@@ -51,7 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg cargo
+apt install -y git python curl dpkg rustc
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
