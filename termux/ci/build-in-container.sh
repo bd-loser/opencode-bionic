@@ -87,11 +87,23 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
-# Build @opencode-ai/pty from source for Bionic. The prebuilt glibc binary
-# won't load on Android; building from source in the container produces a
-# compatible binary. Requires Rust + Zig (fetched by opencode-pty's build.rs).
-if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
-  echo "→ building @opencode-ai/pty from source for Bionic"
+# Embed the native pty service, or skip it like the 1.x builds did.
+#
+# 1.x's build-termux.ts never embedded a pty binary at all — opencode's own
+# pty binding is typed `... | undefined` and packages/cli/script/build.ts
+# already stubs `virtual:persistent-pty/pty-binding.ts` with
+# `export default undefined` when resolution fails, so shipping without it
+# is a supported configuration.
+#
+# Building @opencode-ai/pty from source is what makes the *embeddable* arm64
+# service available: opencode-pty's build.rs drives `zig build` against
+# Ghostty, and in a container Zig cannot resolve the host Android API level
+# (it shells out to `getprop`, an Android system binary that Termux does not
+# ship), so that build dies with ApiLevelQueryFailed. Opt in explicitly once
+# a `getprop` shim or an explicit API level is wired up.
+if [ "${OPENCODE_EMBED_PTY:-0}" = "1" ]; then
+  if [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
+    echo "→ building @opencode-ai/pty from source for Bionic"
 
   # Zig comes from the Termux repo (currently 0.16.0, matching upstream CI)
   # — needed by opencode-pty's build.rs to compile the Ghostty terminal
@@ -135,6 +147,9 @@ if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -
 PKGJSON
   cd "$BUILD_ROOT"
   echo "→ pty installed: $PTY_PKG/bin/opencode-pty ($(du -h "$PTY_PKG/bin/opencode-pty" | cut -f1))"
+  fi
+else
+  echo "→ skipping native pty embed (OPENCODE_EMBED_PTY != 1); binding compiles to undefined"
 fi
 
 cd -
