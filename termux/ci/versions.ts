@@ -49,12 +49,15 @@ type Check = { name: string; ok: boolean; msg: string; fix?: () => void }
 // checks touch root package.json — if each captured its own `pkg` in a
 // closure, the last write would clobber earlier edits.
 function checkOpencodeVersion(target: string): Check | null {
-  const file = path.join(target, "packages/opencode/package.json")
+  // 2.x moved the version to root package.json; 1.x had it in packages/opencode/.
+  const file2x = path.join(target, "package.json")
+  const file1x = path.join(target, "packages/opencode/package.json")
+  const file = existsSync(file2x) ? file2x : file1x
   if (!existsSync(file)) return null
   const cur = readJson(file).version
   const want = versions.opencode
   return {
-    name: "packages/opencode/package.json version",
+    name: "root package.json version",
     ok: cur === want,
     msg: cur === want ? want : `${cur} → ${want}`,
     fix: () => {

@@ -240,16 +240,6 @@ jobs:
           TAG="v${VERSION}-dev.${SHORT}"
           echo "upstream dev head: $SHA (upstream reports v$VERSION) → $TAG"
 
-          # Our patches and build scripts target the 1.x tree
-          # (packages/opencode/...). If that marker is gone (2.x
-          # restructure), a dev build would burn ~30 min and die at the
-          # patch stage — skip loudly until the tree is ported.
-          if ! gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" --jq .sha >/dev/null 2>&1; then
-            echo "build=false" >> "$GITHUB_OUTPUT"
-            echo "tree at $SHORT is post-1.x (no packages/opencode/package.json) — dev builds paused until patches are ported to the new layout."
-            exit 0
-          fi
-
           # Nothing new since the last dev build we shipped.
           if gh release view "$TAG" --repo "$OURS" >/dev/null 2>&1; then
             echo "build=false" >> "$GITHUB_OUTPUT"

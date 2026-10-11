@@ -13,7 +13,7 @@ rejects it. Our fork adds Termux support with a small, well-scoped delta:
 | Kind | File | How it's expressed |
 |---|---|---|
 | Source | `bunfig.toml` | patch — adds `@androidtui/*` to `minimumReleaseAgeExcludes` |
-| Source (new file) | `packages/opencode/script/build-termux.ts` | patch — the compile script (embeds bun-termux, targets aarch64) |
+| Source (new file) | `packages/cli/script/build.ts` (patched) | patch — adds @opentui/* → @androidtui/* alias plugin + Bionic workarounds to the 2.x build system |
 | Source | `packages/core/src/filesystem/fff.bun.ts` | patch — lazy-load `@ff-labs/fff-bun` (no Android binary; falls back to ripgrep) |
 | Config | `package.json` (root) | `versions.ts` — catalog aliases, `optionalDependencies`, remove `postinstall`/`prepare`/`trustedDeps`/fff-bun patch entry |
 | Config | `packages/plugin/package.json` | `versions.ts` — bump version + `peerDependencies` |
@@ -72,7 +72,7 @@ BUILD_DIR=/some/scratch/dir
 bash termux/ci/prepare-build-tree.sh "$BUILD_DIR"    # fetch + config + patches
 cd "$BUILD_DIR"
 bun install
-bun packages/opencode/script/build-termux.ts         # produces the binary
+bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui   # produces the binary
 ```
 
 `prepare-build-tree.sh` internally runs:

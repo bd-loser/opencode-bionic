@@ -51,7 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg
+apt install -y git python curl dpkg cargo
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
@@ -86,6 +86,46 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 
 cd "$BUILD_ROOT"
 bun install
+
+# Build @opencode-ai/pty from source for Bionic. The prebuilt glibc binary
+# won't load on Android; building from source in the container produces a
+# compatible binary. Requires Rust + Zig (fetched by opencode-pty's build.rs).
+if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
+  echo "→ building @opencode-ai/pty from source for Bionic"
+  PTY_SRC="$HOME/opencode-pty-src"
+  rm -rf "$PTY_SRC"
+  git clone --depth 1 https://github.com/anomalyco/opencode-pty.git "$PTY_SRC"
+  cd "$PTY_SRC"
+  # build.rs fetches Ghostty source and builds it with Zig; cargo builds the service.
+  cargo build --release
+  PTY_BIN="$(find target/release -name 'opencode-pty' -type f | head -1)"
+  if [ -z "$PTY_BIN" ]; then
+    echo "error: opencode-pty build produced no binary" >&2
+    exit 1
+  fi
+  PTY_PKG="$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu"
+  mkdir -p "$PTY_PKG/bin"
+  cp "$PTY_BIN" "$PTY_PKG/bin/opencode-pty"
+  chmod +x "$PTY_PKG/bin/opencode-pty"
+  cat > "$PTY_PKG/package.json" <<PKGJSON
+{
+  "name": "@opencode-ai/pty-linux-arm64-gnu",
+  "version": "0.2.0",
+  "description": "OpenCode persistent PTY service for linux-arm64 (Bionic build)",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "exports": {
+    "./package.json": "./package.json",
+    "./bin/opencode-pty": "./bin/opencode-pty"
+  },
+  "files": ["bin"]
+}
+PKGJSON
+  cd "$BUILD_ROOT"
+  echo "→ pty installed: $PTY_PKG/bin/opencode-pty ($(du -h "$PTY_PKG/bin/opencode-pty" | cut -f1))"
+fi
+
 cd -
 
 OPENCODE_ROOT="$BUILD_ROOT" \
@@ -95,7 +135,7 @@ OPENCODE_VERSION="$OPENCODE_VERSION" \
 
 echo "=== POST-BUILD: publishing artifact ==="
 set -x
-BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+BIN="$BUILD_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 test -f "$BIN"
 test -x "$BIN" || chmod +x "$BIN"
 ls -la "$BIN"
