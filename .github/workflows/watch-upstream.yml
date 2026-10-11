@@ -1,7 +1,11 @@
 name: watch-upstream
 
 # Mirrors upstream releases and stability, or builds the latest unseen dev
-# commit when no release bump is pending.
+# commit when no release bump is pending. Watches the three upstream lines
+# the same way upstream itself labels its npm dist-tags:
+#   stable → latest GitHub release   (ships to /releases/latest)
+#   beta   → 'beta' branch head      (prerelease, tagged -beta.<sha>)
+#   dev    → 'dev' branch head       (prerelease, tagged -dev.<sha>)
 
 on:
   schedule:
@@ -22,6 +26,10 @@ on:
         description: "Skip the dev-branch prerelease build this run."
         type: boolean
         default: false
+      skip_beta:
+        description: "Skip the beta-branch prerelease build this run."
+        type: boolean
+        default: false
       draft:
         description: "Create any release dispatched by this run as a draft."
         type: boolean
@@ -34,6 +42,11 @@ concurrency:
 env:
   UPSTREAM: anomalyco/opencode
   OURS: ${{ github.repository }}
+  # Rolling (beta/dev) trees are 2.x and the patch kit is layout-specific,
+  # so prerelease builds run from the branch that carries the 2.x kit — not
+  # main, which still builds the 1.x stable line. Flip this ref (or merge
+  # that branch) once upstream stable moves to 2.x.
+  ROLLING_REF: feat/2x-port
 
 jobs:
   watch:
@@ -196,6 +209,7 @@ jobs:
           gh workflow run release.yml \
             --ref main \
             -f version="$NEW" \
+            -f channel=stable \
             -f draft="$DRAFT" \
             -f prerelease="$UP_PRE"
           echo "dispatched release.yml for v$NEW (prerelease=$UP_PRE)"
@@ -280,11 +294,12 @@ jobs:
           # step and the clone, and then the build would produce a tag other
           # than the one the dedup check above cleared.
           gh workflow run release.yml \
-            --ref main \
+            --ref "$ROLLING_REF" \
             -f upstream_ref="$SHA" \
+            -f channel=dev \
             -f draft="$DRAFT" \
             -f prerelease=true
-          echo "dispatched dev build of $SHA → $TAG (prerelease)"
+          echo "dispatched dev build of $SHA → $TAG from $ROLLING_REF (prerelease)"
 
       - name: Dev dry-run summary
         if: steps.dev.outputs.build == 'true' && inputs.dry_run == true
@@ -293,3 +308,79 @@ jobs:
           TAG: ${{ steps.dev.outputs.tag }}
         run: |
           echo "DRY RUN: would dispatch release.yml for dev commit $SHA → $TAG (prerelease=true)."
+
+      # --- beta line -------------------------------------------------------
+      # The beta branch is its own version line (e.g. 2.0.6 while dev is at
+      # 2.0.26), so unlike dev it is checked even when a stable bump landed.
+
+      - name: Detect new upstream beta commits
+        id: beta
+        if: inputs.skip_beta != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          SHA="$(gh api "repos/$UPSTREAM/commits/beta" --jq .sha)"
+          SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
+
+          VERSION="$(gh api "repos/$UPSTREAM/contents/package.json?ref=$SHA" \
+            --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+          fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "no version resolvable at $SHORT — skipping beta build."
+            exit 0
+          fi
+          TAG="v${VERSION}-beta.${SHORT}"
+          echo "upstream beta head: $SHA (upstream reports v$VERSION) → $TAG"
+
+          if gh release view "$TAG" --repo "$OURS" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "already released $TAG — no new commits."
+            exit 0
+          fi
+
+          # A beta head sitting exactly on a release tag means the stable path
+          # ships this tree; skip a duplicate beta prerelease.
+          REL_TAG="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 20 \
+            --json tagName --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0].tagName // empty')"
+          if [ -n "$REL_TAG" ]; then
+            REL_SHA="$(gh api "repos/$UPSTREAM/commits/$REL_TAG" --jq .sha 2>/dev/null || true)"
+            if [ "$REL_SHA" = "$SHA" ]; then
+              echo "build=false" >> "$GITHUB_OUTPUT"
+              echo "beta head is release $REL_TAG — stable path covers it."
+              exit 0
+            fi
+          fi
+
+          echo "build=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Dispatch beta prerelease
+        if: steps.beta.outputs.build == 'true' && inputs.dry_run != true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ steps.beta.outputs.sha }}
+          TAG: ${{ steps.beta.outputs.tag }}
+          DRAFT: ${{ inputs.draft || false }}
+        run: |
+          set -eu
+          gh workflow run release.yml \
+            --ref "$ROLLING_REF" \
+            -f upstream_ref="$SHA" \
+            -f channel=beta \
+            -f draft="$DRAFT" \
+            -f prerelease=true
+          echo "dispatched beta build of $SHA → $TAG from $ROLLING_REF (prerelease)"
+
+      - name: Beta dry-run summary
+        if: steps.beta.outputs.build == 'true' && inputs.dry_run == true
+        env:
+          SHA: ${{ steps.beta.outputs.sha }}
+          TAG: ${{ steps.beta.outputs.tag }}
+        run: |
+          echo "DRY RUN: would dispatch release.yml for beta commit $SHA → $TAG (prerelease=true)."
