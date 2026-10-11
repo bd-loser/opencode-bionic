@@ -4,9 +4,9 @@
 # Usage:
 #   bash termux/ci/apply-patches.sh <target_dir>
 #
-# Runs `git am --3way` for every termux/patches/*.patch, in filename order.
-# On conflict, aborts the am and prints a diagnostic so CI fails loudly at
-# the patch step (not the build step) when upstream drifts.
+# Runs `patch -p1 --forward` for every termux/patches/*.patch, in filename
+# order. On a rejected hunk, exits non-zero so CI fails loudly at the patch
+# step (not the build step) when upstream drifts.
 
 set -euo pipefail
 

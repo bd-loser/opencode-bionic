@@ -108,13 +108,11 @@ opencode-bionic/
 ├── install.sh                 # curl | bash installer
 ├── termux/
 │   ├── patches/               # unified-diff patches applied to upstream
-│   │   ├── 0001-*.patch         (bunfig.toml: release-age exclusions)
-│   │   ├── 0002-*.patch         (packages/opencode/script/build-termux.ts)
-│   │   └── 0003-*.patch         (packages/core/…/fff.bun.ts: lazy require)
+│   │   └── 0001-*.patch         (bunfig.toml + packages/cli/script/build.ts)
 │   ├── ci/
 │   │   ├── fetch-upstream.sh    # git clone --depth 1 -b vX.Y.Z
 │   │   ├── versions.ts          # apply config delta (package.json edits)
-│   │   ├── apply-patches.sh     # git am --3way termux/patches/*
+│   │   ├── apply-patches.sh     # patch -p1 --forward termux/patches/*
 │   │   ├── prepare-build-tree.sh# fetch + versions + patch, one command
 │   │   ├── refresh-patches.sh   # regenerate patches after upstream bump
 │   │   ├── build-on-runner.sh   # GHA runner side: launches termux-docker
@@ -128,8 +126,9 @@ opencode-bionic/
 
 Upstream is fetched fresh at build time via `git clone --depth 1 -b v$(jq -r
 .opencode versions.json)`, then `versions.ts` mutates package.json files
-(catalog aliases, optionalDeps, install-hook removal), then `git am --3way`
-applies the source patches. This mirrors how Debian, Nixpkgs, Alpine, and
+(catalog aliases, optionalDeps, install-hook removal), then `patch -p1
+--forward` applies the source patches (git am can't three-way merge a
+shallow clone). This mirrors how Debian, Nixpkgs, Alpine, and
 Homebrew maintain downstream deltas — patches either apply cleanly or CI
 fails loudly.
 

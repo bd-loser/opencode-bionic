@@ -14,7 +14,6 @@ rejects it. Our fork adds Termux support with a small, well-scoped delta:
 |---|---|---|
 | Source | `bunfig.toml` | patch — adds `@androidtui/*` to `minimumReleaseAgeExcludes` |
 | Source (new file) | `packages/cli/script/build.ts` (patched) | patch — adds @opentui/* → @androidtui/* alias plugin + Bionic workarounds to the 2.x build system |
-| Source | `packages/core/src/filesystem/fff.bun.ts` | patch — lazy-load `@ff-labs/fff-bun` (no Android binary; falls back to ripgrep) |
 | Config | `package.json` (root) | `versions.ts` — catalog aliases, `optionalDependencies`, remove `postinstall`/`prepare`/`trustedDeps`/fff-bun patch entry |
 | Config | `packages/plugin/package.json` | `versions.ts` — bump version + `peerDependencies` |
 
@@ -185,7 +184,7 @@ CI reads the same file; there is no other place versions are tracked.
 | `patch -p1 --forward` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
 | `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `packages/cli/script/build.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
 | `libopentui.so` extraction fails from bunfs | Native `.so` version drift, or the compiled binary shipped with the wrong `.so` | Bump `opentui.androidArm64Native` in `versions.json` and rebuild |
-| `Cannot find module '@ff-labs/fff-bun'` at runtime | The fff.bun.ts hunk of patch 0001 didn't apply | Re-run `apply-patches.sh` in the build tree and check for `.rej` files |
+| Ripgrep-style glob/grep slow or missing results | `@ff-labs/fff-bun`'s optional `@ff-labs/fff-bin-android-arm64` prebuilt didn't resolve for the pinned version | Confirm the runtime fell back to ripgrep (check `which rg`); not fatal |
 
 ## Design notes
 
@@ -201,7 +200,7 @@ programmatically in `versions.ts`.
 
 **Why put patches under `termux/patches/`?** Upstream itself uses
 top-level `patches/` for its own Bun patch files
-(`patches/@ff-labs%2Ffff-bun@0.9.3.patch` etc.). Nesting under `termux/`
+(`patches/@ff-labs%2Ffff-bun@0.10.5.patch` etc.). Nesting under `termux/`
 avoids the collision.
 
 **Why fetch upstream fresh instead of a git submodule?** Submodules add

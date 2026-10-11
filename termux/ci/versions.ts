@@ -12,7 +12,7 @@
 // The "config delta" (root package.json cleanup, catalog aliases,
 // optionalDependencies, plugin peer bumps) is expressed programmatically
 // here rather than as a patch because the shape survives upstream
-// reformatting. The "source delta" (bunfig.toml, fff.bun.ts,
+// reformatting. The "source delta" (bunfig.toml,
 // packages/cli/script/build.ts) lives in termux/patches/ as unified diffs.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
@@ -158,7 +158,8 @@ function checkRootConfigCleanup(target: string): Check | null {
   const hasPostinstall = pkg.scripts?.postinstall !== undefined
   const hasPrepare = pkg.scripts?.prepare !== undefined
   const hasTrusted = Array.isArray(pkg.trustedDependencies) && pkg.trustedDependencies.length > 0
-  const hasFffPatch = pkg.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined
+  const fffPatchKeys = Object.keys(pkg.patchedDependencies ?? {}).filter((k) => k.startsWith("@ff-labs/fff-bun@"))
+  const hasFffPatch = fffPatchKeys.length > 0
   const drifted = hasPostinstall || hasPrepare || hasTrusted || hasFffPatch
   const detail = [
     hasPostinstall && "postinstall",
@@ -177,8 +178,9 @@ function checkRootConfigCleanup(target: string): Check | null {
       if (p.scripts?.postinstall !== undefined) delete p.scripts.postinstall
       if (p.scripts?.prepare !== undefined) delete p.scripts.prepare
       if (Array.isArray(p.trustedDependencies) && p.trustedDependencies.length > 0) p.trustedDependencies = []
-      if (p.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined)
-        delete p.patchedDependencies["@ff-labs/fff-bun@0.9.3"]
+      if (p.patchedDependencies)
+        for (const k of Object.keys(p.patchedDependencies))
+          if (k.startsWith("@ff-labs/fff-bun@")) delete p.patchedDependencies[k]
       writeJson(file, p)
     },
   }
