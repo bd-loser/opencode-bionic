@@ -106,34 +106,3 @@ index 7f22183..852484c 100755
      compile: {
        autoloadBunfig: false,
        autoloadDotenv: false,
-diff --git a/packages/core/src/filesystem/fff.bun.ts b/packages/core/src/filesystem/fff.bun.ts
-index 6c824a7..102a318 100644
---- a/packages/core/src/filesystem/fff.bun.ts
-+++ b/packages/core/src/filesystem/fff.bun.ts
-@@ -1,4 +1,4 @@
--import { FileFinder } from "@ff-labs/fff-bun"
-+import type { FileFinder as FileFinderType } from "@ff-labs/fff-bun"
- import { bind } from "./fff.js"
- 
- export type { Directory, DirSearch, File, Init, Mixed, MixedSearch, Picker, Result, Search } from "./fff.js"
-@@ -7,9 +7,17 @@ declare global {
-   const FFF_LIBC: "gnu" | "musl"
- }
- 
--const adapter = bind(FileFinder)
-+// Load optionally because the package is skipped on Android; absence uses ripgrep.
-+let FileFinder: typeof FileFinderType | null
-+try {
-+  FileFinder = require("@ff-labs/fff-bun").FileFinder
-+} catch {
-+  FileFinder = null
-+}
-+
-+const adapter = FileFinder ? bind(FileFinder) : null
- 
--export const available = adapter.available
--export const create = adapter.create
-+export const available = adapter ? adapter.available : () => false
-+export const create = adapter ? adapter.create : (opts: any) => ({ ok: false, error: "fff-bun not installed on this platform (os restriction)" })
- 
- export * as Fff from "./fff.bun.js"
