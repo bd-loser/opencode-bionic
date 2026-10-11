@@ -70,14 +70,18 @@ BUILD_DIR=/some/scratch/dir
 bash termux/ci/prepare-build-tree.sh "$BUILD_DIR"    # fetch + config + patches
 cd "$BUILD_DIR"
 bun install
-bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui   # produces the binary
+bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui   # → packages/cli/dist/cli-linux-arm64/bin/opencode
 ```
+
+`--target` selects by `targetName()` (`opencode-linux-arm64`), but the output
+directory is `name = target.replace("opencode", "cli")`, so the binary lands in
+`dist/cli-linux-arm64/`.
 
 `prepare-build-tree.sh` internally runs:
 
 1. `fetch-upstream.sh` — `git clone --depth 1 -b v$(jq .opencode versions.json) anomalyco/opencode`
 2. `bun termux/ci/versions.ts apply --target $BUILD_DIR` — apply config delta
-3. `apply-patches.sh` — `git am --3way termux/patches/*.patch`
+3. `apply-patches.sh` — `patch -p1 --forward termux/patches/*.patch`
 
 Any of those failing aborts loudly — no half-patched trees.
 

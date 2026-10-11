@@ -18,7 +18,7 @@ if [ -z "${PREFIX:-}" ]; then
   fail "PREFIX not set. This script must run inside Termux."
 fi
 
-BINARY="$OPENCODE_ROOT/packages/cli/dist/opencode-linux-arm64/bin/opencode"
+BINARY="$OPENCODE_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 
 if [ ! -f "$BINARY" ]; then
   fail "Binary not found at $BINARY — run: bash termux/build-opencode-termux.sh"

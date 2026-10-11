@@ -59,7 +59,7 @@ if [ "$BUILD_EXIT" -ne 0 ]; then
   fail "script/build.ts failed (exit $BUILD_EXIT)"
 fi
 
-BINARY_PATH="$OPENCODE_ROOT/packages/cli/dist/opencode-linux-arm64/bin/opencode"
+BINARY_PATH="$OPENCODE_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 
 if [ ! -f "$BINARY_PATH" ]; then
   fail "Binary not found at $BINARY_PATH"

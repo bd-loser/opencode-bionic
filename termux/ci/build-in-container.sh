@@ -161,7 +161,7 @@ OPENCODE_VERSION="$OPENCODE_VERSION" \
 
 echo "=== POST-BUILD: publishing artifact ==="
 set -x
-BIN="$BUILD_ROOT/packages/cli/dist/opencode-linux-arm64/bin/opencode"
+BIN="$BUILD_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 test -f "$BIN"
 test -x "$BIN" || chmod +x "$BIN"
 ls -la "$BIN"

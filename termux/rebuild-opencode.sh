@@ -67,7 +67,7 @@ ok "@opentui/core → @androidtui/core"
 header "Step 3: Build compiled binary"
 OPENCODE_ROOT="$BUILD_DIR" bash "$SCRIPT_DIR/build-opencode-termux.sh"
 
-BINARY="$BUILD_DIR/packages/cli/dist/opencode-linux-arm64/bin/opencode"
+BINARY="$BUILD_DIR/packages/cli/dist/cli-linux-arm64/bin/opencode"
 [ -f "$BINARY" ] || fail "Binary not found at $BINARY"
 ok "Binary: $BINARY ($(du -h "$BINARY" | cut -f1))"
 
