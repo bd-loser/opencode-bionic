@@ -72,8 +72,21 @@ jobs:
             # clone, and the release notes would name a build we didn't make.
             SHA="$(gh api "repos/$UPSTREAM/commits/$REF" --jq .sha)"
             SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
-            VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
-              --jq .content | base64 -d | jq -r .version)"
+            # Upstream restructured after 1.x: the version moved from
+            # packages/opencode/package.json to the root package.json
+            # (2.x tree). Probe both; fail LOUDLY here — an empty VERSION
+            # once slipped through (set -eu without pipefail swallows the
+            # 404) and produced a garbage v-dev.<sha> tag downstream.
+            VERSION="$(gh api "repos/$UPSTREAM/contents/package.json?ref=$SHA" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
+                --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            fi
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              echo "error: no version resolvable at $SHA (tried root + packages/opencode package.json)" >&2
+              exit 1
+            fi
             if [ -n "$INPUT_VERSION" ]; then
               # Hotfix rebuild: an explicit version overrides the ref-derived
               # tag, e.g. upstream_ref=v1.18.31 + version=1.18.31.1 re-ships

@@ -220,12 +220,35 @@ jobs:
           SHORT="$(printf '%s' "$SHA" | cut -c1-8)"
 
           # release.yml derives the tag the same way, from the version in the
-          # package.json AT THAT COMMIT. Recompute it here so the dedup check
-          # below tests the tag the build would actually produce.
-          VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
-            --jq .content | base64 -d | jq -r .version)"
+          # package.json AT THAT COMMIT. Upstream restructured after 1.x, so
+          # probe the root package.json (2.x) first, then the legacy path.
+          # Never let an empty VERSION through: without pipefail a 404 here
+          # once silently produced TAG=v-dev.<sha> and dispatched a doomed
+          # release. In this scheduled routine we skip (next tick retries);
+          # release.yml hard-fails instead.
+          VERSION="$(gh api "repos/$UPSTREAM/contents/package.json?ref=$SHA" \
+            --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+          fi
+          if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "no version resolvable at $SHORT (tried root + legacy package.json) — skipping dev build."
+            exit 0
+          fi
           TAG="v${VERSION}-dev.${SHORT}"
           echo "upstream dev head: $SHA (upstream reports v$VERSION) → $TAG"
+
+          # Our patches and build scripts target the 1.x tree
+          # (packages/opencode/...). If that marker is gone (2.x
+          # restructure), a dev build would burn ~30 min and die at the
+          # patch stage — skip loudly until the tree is ported.
+          if ! gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" --jq .sha >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"
+            echo "tree at $SHORT is post-1.x (no packages/opencode/package.json) — dev builds paused until patches are ported to the new layout."
+            exit 0
+          fi
 
           # Nothing new since the last dev build we shipped.
           if gh release view "$TAG" --repo "$OURS" >/dev/null 2>&1; then
