@@ -51,20 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg
-
-# Install Rust via rustup (termux-docker apt doesn't carry rustc/cargo).
-# $PREFIX is on an overlayfs that lacks flock(), so rustup's lock file fails —
-# use /usr/local (container root fs) for RUSTUP_HOME/CARGO_HOME.
-if ! command -v cargo >/dev/null 2>&1; then
-  echo "→ installing Rust via rustup"
-  export RUSTUP_HOME=/usr/local/rustup
-  export CARGO_HOME=/usr/local/cargo
-  mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
-  curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
-  export PATH="$CARGO_HOME/bin:$PATH"
-fi
-cargo --version
+apt install -y git python curl dpkg rust
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
