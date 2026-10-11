@@ -1,20 +1,5 @@
-From 4a024674ecc27507b7048942491610522da03008 Mon Sep 17 00:00:00 2001
-From: opencode-bionic build <opencode-bionic@localhost>
-Date: Sun, 11 Oct 2026 16:57:36 +0600
-Subject: [PATCH] =?UTF-8?q?termux:=202.x=20port=20=E2=80=94=20alias=20plug?=
- =?UTF-8?q?in,=20Bionic=20workarounds,=20lazy=20fff?=
-MIME-Version: 1.0
-Content-Type: text/plain; charset=UTF-8
-Content-Transfer-Encoding: 8bit
-
----
- bunfig.toml                             |  2 +-
- packages/cli/script/build.ts            | 52 +++++++++++++++++++++----
- packages/core/src/filesystem/fff.bun.ts | 16 ++++++--
- 3 files changed, 57 insertions(+), 13 deletions(-)
-
 diff --git a/bunfig.toml b/bunfig.toml
-index 37701ac..d6d8b33 100644
+index 37701ac..b4c8a2b 100644
 --- a/bunfig.toml
 +++ b/bunfig.toml
 @@ -2,7 +2,7 @@
@@ -22,20 +7,21 @@ index 37701ac..d6d8b33 100644
  # Only install newly resolved package versions published at least 3 days ago.
  minimumReleaseAge = 259200
 -minimumReleaseAgeExcludes = ["@ai-sdk/amazon-bedrock", "@ai-sdk/anthropic", "@brendonovich/vite-plugin-opencode", "@kitlangton/solid-motion", "@opencode/sdk", "@opencode-ai/pty", "@opencode-ai/pty-darwin-arm64", "@opencode-ai/pty-darwin-x64", "@opencode-ai/pty-linux-arm64-gnu", "@opencode-ai/pty-linux-arm64-musl", "@opencode-ai/pty-linux-x64-gnu", "@opencode-ai/pty-linux-x64-musl", "@opentui/core", "@opentui/core-darwin-arm64", "@opentui/core-darwin-x64", "@opentui/core-linux-arm64", "@opentui/core-linux-arm64-musl", "@opentui/core-linux-x64", "@opentui/core-linux-x64-musl", "@opentui/core-win32-arm64", "@opentui/core-win32-x64", "@opentui/keymap", "@opentui/solid", "@opentunnel/client", "@opentunnel/protocol", "opentui-spinner", "gitlab-ai-provider", "opencode-gitlab-auth", "@ff-labs/fff-node", "@ff-labs/fff-bun", "@ff-labs/fff-bin-darwin-arm64", "@ff-labs/fff-bin-darwin-x64", "@ff-labs/fff-bin-linux-arm64-gnu", "@ff-labs/fff-bin-linux-arm64-musl", "@ff-labs/fff-bin-linux-x64-gnu", "@ff-labs/fff-bin-linux-x64-musl", "@ff-labs/fff-bin-win32-arm64", "@ff-labs/fff-bin-win32-x64", "@pierre/diffs", "@pierre/theming", "app-builder-lib", "dmg-builder", "electron", "electron-builder", "electron-publish", "blume", "mermaid"]
-+minimumReleaseAgeExcludes = ["@ai-sdk/amazon-bedrock", "@ai-sdk/anthropic", "@androidtui/core", "@androidtui/core-android-arm64", "@androidtui/react", "@androidtui/solid", "@androidtui/keymap", "@brendonovich/vite-plugin-opencode", "@kitlangton/solid-motion", "@opencode/sdk", "@opencode-ai/pty", "@opencode-ai/pty-darwin-arm64", "@opencode-ai/pty-darwin-x64", "@opencode-ai/pty-linux-arm64-gnu", "@opencode-ai/pty-linux-arm64-musl", "@opencode-ai/pty-linux-x64-gnu", "@opencode-ai/pty-linux-x64-musl", "@opentui/core", "@opentui/core-darwin-arm64", "@opentui/core-darwin-x64", "@opentui/core-linux-arm64", "@opentui/core-linux-arm64-musl", "@opentui/core-linux-x64", "@opentui/core-linux-x64-musl", "@opentui/core-win32-arm64", "@opentui/core-win32-x64", "@opentui/keymap", "@opentui/solid", "@opentunnel/client", "@opentunnel/protocol", "opentui-spinner", "gitlab-ai-provider", "opencode-gitlab-auth", "@ff-labs/fff-node", "@ff-labs/fff-bun", "@ff-labs/fff-bin-darwin-arm64", "@ff-labs/fff-bin-darwin-x64", "@ff-labs/fff-bin-linux-arm64-gnu", "@ff-labs/fff-bin-linux-arm64-musl", "@ff-labs/fff-bin-linux-x64-gnu", "@ff-labs/fff-bin-linux-x64-musl", "@ff-labs/fff-bin-win32-arm64", "@ff-labs/fff-bin-win32-x64", "@pierre/diffs", "@pierre/theming", "app-builder-lib", "dmg-builder", "electron", "electron-builder", "electron-publish", "blume", "mermaid"]
++minimumReleaseAgeExcludes = ["@ai-sdk/amazon-bedrock", "@ai-sdk/anthropic", "@brendonovich/vite-plugin-opencode", "@kitlangton/solid-motion", "@opencode/sdk", "@opencode-ai/pty", "@opencode-ai/pty-darwin-arm64", "@opencode-ai/pty-darwin-x64", "@opencode-ai/pty-linux-arm64-gnu", "@opencode-ai/pty-linux-arm64-musl", "@opencode-ai/pty-linux-x64-gnu", "@opencode-ai/pty-linux-x64-musl", "@opentui/core", "@opentui/core-darwin-arm64", "@opentui/core-darwin-x64", "@opentui/core-linux-arm64", "@opentui/core-linux-arm64-musl", "@opentui/core-linux-x64", "@opentui/core-linux-x64-musl", "@opentui/core-win32-arm64", "@opentui/core-win32-x64", "@opentui/keymap", "@opentui/solid", "@opentunnel/client", "@opentunnel/protocol", "opentui-spinner", "gitlab-ai-provider", "opencode-gitlab-auth", "@ff-labs/fff-node", "@ff-labs/fff-bun", "@ff-labs/fff-bin-darwin-arm64", "@ff-labs/fff-bin-darwin-x64", "@ff-labs/fff-bin-linux-arm64-gnu", "@ff-labs/fff-bin-linux-arm64-musl", "@ff-labs/fff-bin-linux-x64-gnu", "@ff-labs/fff-bin-linux-x64-musl", "@ff-labs/fff-bin-win32-arm64", "@ff-labs/fff-bin-win32-x64", "@pierre/diffs", "@pierre/theming", "app-builder-lib", "dmg-builder", "electron", "electron-builder", "electron-publish", "blume", "mermaid", "@androidtui/core", "@androidtui/core-android-arm64", "@androidtui/react", "@androidtui/solid", "@androidtui/keymap"]
  
  [test]
  root = "./do-not-run-tests-from-root"
 diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
-index 7f22183..04168ee 100755
+index 7f22183..852484c 100755
 --- a/packages/cli/script/build.ts
 +++ b/packages/cli/script/build.ts
-@@ -12,6 +12,33 @@ import { buildAppArchive } from "./app-assets"
+@@ -12,6 +12,32 @@ import { buildAppArchive } from "./app-assets"
  import { verifyArtifact, verifySimulationGraph } from "./verify-artifact"
  import { resolveOpencodePty } from "./opencode-pty"
  
-+// opentuiAliasPlugin — remap bare @opentui/* imports to @androidtui/*.
-+// Our fork replaces @opentui/* with @androidtui/* (native Android support).
++// opentuiAliasPlugin - remap bare @opentui/* imports to @androidtui/*.
++// Our fork publishes @androidtui/*; isolated linking does not propagate
++// the root catalog aliases into nested packages.
 +const opentuiAliasPlugin: BunPlugin = {
 +  name: "opentui-alias",
 +  setup(build) {
@@ -59,12 +45,10 @@ index 7f22183..04168ee 100755
 +  },
 +}
 +
-+
-+
  const dir = path.resolve(import.meta.dirname, "..")
  const binary = "opencode"
  const outdir = path.resolve(
-@@ -109,11 +136,16 @@ const pluginRuntimePlugin: BunPlugin = {
+@@ -109,11 +135,16 @@ const pluginRuntimePlugin: BunPlugin = {
  }
  
  for (const item of targets) {
@@ -86,27 +70,31 @@ index 7f22183..04168ee 100755
    const opencodePtyPlugin: BunPlugin = {
      name: "opencode-pty-binary",
      setup(build) {
-@@ -136,7 +168,10 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+@@ -136,6 +167,11 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
        )
      },
    }
--  const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
++  // Bionic: @parcel/watcher-<linux>-<arch>-<libc> are glibc-only prebuilts
++  // that cannot load on Android. Skip the binding plugin entirely and let
++  // watcher-binding.ts keep its dynamic require, which fails at runtime and
++  // falls back - packages/core/src/filesystem/watcher.ts guards loadBinding().
 +  const isTermux = process.platform === "android" || process.env.TERMUX_VERSION !== undefined
-+  const parcelWatcherPackage = isTermux
-+    ? "@parcel/watcher-stub"
-+    : `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
+   const parcelWatcherPackage = `@parcel/watcher-${item.os}-${item.arch}${item.os === "linux" ? `-${item.abi ?? "glibc"}` : ""}`
    const parcelWatcherPlugin: BunPlugin = {
      name: "parcel-watcher-binding",
-     setup(build) {
-@@ -154,6 +189,7 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+@@ -154,9 +190,10 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
      entrypoints: ["./src/index.ts"],
      tsconfig: "./tsconfig.json",
      plugins: [
 +      opentuiAliasPlugin,
        appAssetsPlugin,
        solidPlugin,
-       parcelWatcherPlugin,
-@@ -164,9 +200,9 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+-      parcelWatcherPlugin,
++      ...(isTermux ? [] : [parcelWatcherPlugin]),
+       opencodePtyPlugin,
+       pluginRuntimePlugin,
+       simulationGraphPlugin,
+@@ -164,9 +201,9 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
      external: ["node-gyp"],
      format: "esm",
      minify: true,
@@ -149,6 +137,3 @@ index 6c824a7..102a318 100644
 +export const create = adapter ? adapter.create : (opts: any) => ({ ok: false, error: "fff-bun not installed on this platform (os restriction)" })
  
  export * as Fff from "./fff.bun.js"
--- 
-2.55.0
-
