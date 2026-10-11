@@ -54,10 +54,15 @@ apt update -y
 apt install -y git python curl dpkg
 
 # Install Rust via rustup (termux-docker apt doesn't carry rustc/cargo).
+# $HOME is on an overlayfs that lacks flock(), so rustup's lock file fails —
+# redirect RUSTUP_HOME/CARGO_HOME to /opt which supports locking.
 if ! command -v cargo >/dev/null 2>&1; then
   echo "→ installing Rust via rustup"
+  export RUSTUP_HOME="${RUSTUP_HOME:-$PREFIX/opt/rustup}"
+  export CARGO_HOME="${CARGO_HOME:-$PREFIX/opt/cargo}"
+  mkdir -p "$RUSTUP_HOME" "$CARGO_HOME"
   curl -fsSL https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.90.0 --profile minimal
-  . "$HOME/.cargo/env"
+  . "$CARGO/env"
 fi
 cargo --version
 
