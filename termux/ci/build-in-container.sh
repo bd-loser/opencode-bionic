@@ -92,6 +92,22 @@ bun install
 # compatible binary. Requires Rust + Zig (fetched by opencode-pty's build.rs).
 if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
   echo "→ building @opencode-ai/pty from source for Bionic"
+
+  # Zig 0.16.0 (matches upstream CI) — needed by opencode-pty's build.rs
+  # to compile the Ghostty terminal emulation library.
+  if ! command -v zig >/dev/null 2>&1; then
+    echo "→ installing Zig 0.16.0"
+    ZIG_TARBALL="zig-linux-aarch64-0.16.0.tar.xz"
+    ZIG_TMP="$(mktemp -d)"
+    curl -fsSL -o "$ZIG_TMP/$ZIG_TARBALL" "https://ziglang.org/download/0.16.0/$ZIG_TARBALL" \
+      || { echo "error: Zig download failed" >&2; exit 1; }
+    tar -xJf "$ZIG_TMP/$ZIG_TARBALL" -C "$ZIG_TMP"
+    cp -r "$ZIG_TMP/zig-linux-aarch64-0.16.0" "$PREFIX/opt/zig"
+    ln -sf "$PREFIX/opt/zig/zig" "$PREFIX/bin/zig"
+    rm -rf "$ZIG_TMP"
+    zig version
+  fi
+
   PTY_SRC="$HOME/opencode-pty-src"
   rm -rf "$PTY_SRC"
   git clone --depth 1 https://github.com/anomalyco/opencode-pty.git "$PTY_SRC"
