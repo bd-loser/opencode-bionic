@@ -51,7 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg rust
+apt install -y git python curl dpkg rust zig
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
@@ -93,20 +93,15 @@ bun install
 if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
   echo "→ building @opencode-ai/pty from source for Bionic"
 
-  # Zig 0.16.0 (matches upstream CI) — needed by opencode-pty's build.rs
-  # to compile the Ghostty terminal emulation library.
-  if ! command -v zig >/dev/null 2>&1; then
-    echo "→ installing Zig 0.16.0"
-    ZIG_TARBALL="zig-linux-aarch64-0.16.0.tar.xz"
-    ZIG_TMP="$(mktemp -d)"
-    curl -fsSL -o "$ZIG_TMP/$ZIG_TARBALL" "https://ziglang.org/download/0.16.0/$ZIG_TARBALL" \
-      || { echo "error: Zig download failed" >&2; exit 1; }
-    tar -xJf "$ZIG_TMP/$ZIG_TARBALL" -C "$ZIG_TMP"
-    cp -r "$ZIG_TMP/zig-linux-aarch64-0.16.0" "$PREFIX/opt/zig"
-    ln -sf "$PREFIX/opt/zig/zig" "$PREFIX/bin/zig"
-    rm -rf "$ZIG_TMP"
-    zig version
-  fi
+  # Zig comes from the Termux repo (currently 0.16.0, matching upstream CI)
+  # — needed by opencode-pty's build.rs to compile the Ghostty terminal
+  # emulation library. Assert rather than download: ziglang.org's tarball
+  # naming is unstable across releases, which is how this step 404'd.
+  command -v zig >/dev/null 2>&1 || {
+    echo "error: zig not found after 'apt install zig'" >&2
+    exit 1
+  }
+  echo "→ using zig $(zig version) at $(command -v zig)"
 
   PTY_SRC="$HOME/opencode-pty-src"
   rm -rf "$PTY_SRC"
