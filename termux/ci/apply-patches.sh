@@ -36,14 +36,20 @@ done
 
 if ! git -C "$TARGET" am --3way "${PATCHES[@]}"; then
   echo "" >&2
-  echo "error: patch application failed." >&2
-  echo "" >&2
-  echo "  If upstream renamed or restructured files, regenerate patches:" >&2
-  echo "    1. Resolve the conflict in $TARGET (edit, git add, git am --continue)" >&2
-  echo "    2. bash termux/ci/refresh-patches.sh $TARGET" >&2
-  echo "" >&2
-  echo "  Otherwise abort with: git -C $TARGET am --abort" >&2
-  exit 1
+  echo "error: git am failed, trying patch -p1..." >&2
+  for p in "${PATCHES[@]}"; do
+    patch -d "$TARGET" -p1 -i "$p" || {
+      echo "" >&2
+      echo "error: patch -p1 also failed for $(basename "$p")." >&2
+      echo "" >&2
+      echo "  If upstream renamed or restructured files, regenerate patches:" >&2
+      echo "    1. Resolve the conflict in $TARGET (edit, git add, git am --continue)" >&2
+      echo "    2. bash termux/ci/refresh-patches.sh $TARGET" >&2
+      echo "" >&2
+      echo "  Otherwise abort." >&2
+      exit 1
+    }
+  done
 fi
 
 echo "→ patches applied cleanly."
