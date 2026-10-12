@@ -49,6 +49,10 @@ type Check = { name: string; ok: boolean; msg: string; fix?: () => void }
 // checks touch root package.json — if each captured its own `pkg` in a
 // closure, the last write would clobber earlier edits.
 function checkOpencodeVersion(target: string): Check | null {
+  // Rolling builds (beta/dev) carry their own version (e.g. 2.0.6-beta.<sha>)
+  // via OPENCODE_VERSION, which upstream's Script.version prefers. Rewriting
+  // package.json to versions.json's pin would mislabel the tree.
+  if (process.env.OPENCODE_VERSION) return null
   // 2.x moved the version to root package.json; 1.x had it in packages/opencode/.
   const file2x = path.join(target, "package.json")
   const file1x = path.join(target, "packages/opencode/package.json")
@@ -69,6 +73,7 @@ function checkOpencodeVersion(target: string): Check | null {
 }
 
 function checkPluginVersion(target: string): Check | null {
+  if (process.env.OPENCODE_VERSION) return null
   const file = path.join(target, "packages/plugin/package.json")
   if (!existsSync(file)) return null
   const cur = readJson(file).version
@@ -146,6 +151,41 @@ function checkAndroidNative(target: string): Check | null {
       pkg.overrides[key] = want
       pkg.optionalDependencies[key] = want
       writeJson(file, pkg)
+    },
+  }
+}
+
+// bunfig.toml: the 3-day bun minimumReleaseAge gate would block the fresh
+// @androidtui/* releases. Upstream already lists its own @opentui/@ff-labs
+// prebuilts in minimumReleaseAgeExcludes; we append the @androidtui aliases
+// we ship. Programmatic (not a patch hunk) because the line's contents change
+// upstream on most releases and the array is the only thing we touch.
+function checkBunfigReleaseAge(target: string): Check | null {
+  const file = path.join(target, "bunfig.toml")
+  if (!existsSync(file)) return null
+  const want = ["@androidtui/core", "@androidtui/core-android-arm64", "@androidtui/react", "@androidtui/solid", "@androidtui/keymap"]
+  const lines = readFileSync(file, "utf8").split("\n")
+  const idx = lines.findIndex((l) => l.trimStart().startsWith("minimumReleaseAgeExcludes"))
+  if (idx === -1) return null
+  const line = lines[idx]!
+  const match = line.match(/^minimumReleaseAgeExcludes\s*=\s*\[(.*)\]\s*$/)
+  if (!match) return null
+  const current = match[1]!.includes("@androidtui")
+    ? [...match[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!)
+    : []
+  const missing = want.filter((w) => !current.includes(w))
+  return {
+    name: "bunfig minimumReleaseAgeExcludes has @androidtui/*",
+    ok: missing.length === 0,
+    msg: missing.length === 0 ? "all 5 present" : `missing ${missing.join(", ")}`,
+    fix: () => {
+      const now = readFileSync(file, "utf8").split("\n")
+      const cur = now[idx]!
+      const body = cur.match(/^minimumReleaseAgeExcludes\s*=\s*\[(.*)\]\s*$/)![1]!
+      const have = [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]!)
+      for (const w of want) if (!have.includes(w)) have.push(w)
+      now[idx] = `minimumReleaseAgeExcludes = [${have.map((x) => JSON.stringify(x)).join(", ")}]`
+      writeFileSync(file, now.join("\n"))
     },
   }
 }
@@ -311,6 +351,7 @@ async function main() {
     checkPluginVersion(target),
     checkCatalogOpentui(target),
     checkAndroidNative(target),
+    checkBunfigReleaseAge(target),
     checkRootConfigCleanup(target),
   ].filter((c): c is Check => c !== null)
 

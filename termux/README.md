@@ -12,15 +12,16 @@ rejects it. Our fork adds Termux support with a small, well-scoped delta:
 
 | Kind | File | How it's expressed |
 |---|---|---|
-| Source | `bunfig.toml` | patch — adds `@androidtui/*` to `minimumReleaseAgeExcludes` |
+| Config | `bunfig.toml` | `versions.ts` — appends `@androidtui/*` to `minimumReleaseAgeExcludes` |
 | Source (new file) | `packages/cli/script/build.ts` (patched) | patch — adds @opentui/* → @androidtui/* alias plugin + Bionic workarounds to the 2.x build system |
 | Config | `package.json` (root) | `versions.ts` — catalog aliases, `optionalDependencies`, remove `postinstall`/`prepare`/`trustedDeps`/fff-bun patch entry |
 | Config | `packages/plugin/package.json` | `versions.ts` — bump version + `peerDependencies` |
 
 Split rationale: **patches** are shape-fragile but greppable — if upstream
-renames `fff.bun.ts`, `git am` fails loudly. **`versions.ts`** applies
-JSON edits semantically — resilient to reformatting, and re-emits the
-correct values on version bumps.
+renames a patched file or rewrites the anchor lines, `patch -p1` fails
+loudly. **`versions.ts`** applies edits semantically (JSON fields, TOML
+array entries) — resilient to reformatting, and re-emits the correct
+values on version bumps.
 
 ## Directory layout
 

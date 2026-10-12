@@ -11,8 +11,8 @@
 [![Downloads](https://img.shields.io/github/downloads/bd-loser/opencode-bionic/total.svg)](https://github.com/bd-loser/opencode-bionic/releases)
 [![Bun](https://img.shields.io/badge/Bun-1.4.0%20(bd--loser%20patched)-blue.svg)](https://github.com/bd-loser/bun-termux)
 <!-- versions:badges -->
-[![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.5.11-green.svg)](https://www.npmjs.com/package/@androidtui/core)
-[![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.5.11-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
+[![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core)
+[![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
 <!-- /versions:badges -->
 
 **Keywords:** opencode android · opencode termux · opencode aarch64 ·
@@ -108,7 +108,7 @@ opencode-bionic/
 ├── install.sh                 # curl | bash installer
 ├── termux/
 │   ├── patches/               # unified-diff patches applied to upstream
-│   │   └── 0001-*.patch         (bunfig.toml + packages/cli/script/build.ts)
+│   │   └── 0001-*.patch         (packages/cli/script/build.ts)
 │   ├── ci/
 │   │   ├── fetch-upstream.sh    # git clone --depth 1 -b vX.Y.Z
 │   │   ├── versions.ts          # apply config delta (package.json edits)
@@ -141,9 +141,9 @@ picks up the bump on its next run.
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `1.19.0` |
-| `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.11` |
-| `@androidtui/core-android-arm64` (native `.so`) | `0.5.11` |
+| opencode (upstream) | `2.0.26` |
+| `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
+| `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
 | `bun-termux` runtime | `1.4.2-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
 <!-- /versions:table -->
 
