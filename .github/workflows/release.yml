@@ -142,11 +142,18 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.version.outputs.tag }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
         run: |
           set -eu
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "error: release $TAG already exists. Bump versions.json or delete the release first." >&2
-            exit 1
+            # Rolling tags are mutable (rebuilds on toolchain/pin bumps are
+            # routine); stable tags are immutable.
+            if [ "$CHANNEL" = "stable" ]; then
+              echo "error: stable release $TAG already exists." >&2
+              exit 1
+            fi
+            echo "replacing existing rolling release $TAG"
+            gh release delete "$TAG" --cleanup-tag --yes
           fi
 
       - name: Apply pinned versions
