@@ -1,142 +1,91 @@
-# opencode-bionic — opencode for Android / Termux (aarch64)
+# opencode for Android — native Termux build
 
-> **Run [opencode](https://opencode.ai) — the open-source AI coding agent —
-> natively on your Android phone.** No proot, no chroot, no Linux VM. This
-> repo ships a Bionic-libc aarch64 build of opencode as a Termux `.deb`,
-> installable with one `curl | bash`.
+> Run [opencode](https://opencode.ai), the open-source AI coding agent,
+> **natively on your Android phone**. No proot, no chroot, no Linux VM,
+> no root. A Bionic-native aarch64 build, packaged for Termux.
 
-[![Termux](https://img.shields.io/badge/Platform-Termux%20Android%20arm64-black.svg)](https://termux.dev)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
-[![Release](https://img.shields.io/github/v/release/bd-loser/opencode-bionic?display_name=tag)](https://github.com/bd-loser/opencode-bionic/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/bd-loser/opencode-bionic/total.svg)](https://github.com/bd-loser/opencode-bionic/releases)
-[![Bun](https://img.shields.io/badge/Bun-1.4.0%20(bd--loser%20patched)-blue.svg)](https://github.com/bd-loser/bun-termux)
+[![Termux](https://img.shields.io/badge/Termux-Android%20arm64-black?logo=android&logoColor=white)](https://termux.dev)
+[![Latest release](https://img.shields.io/github/v/release/bd-loser/opencode-bionic?display_name=tag&color=blue)](https://github.com/bd-loser/opencode-bionic/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/bd-loser/opencode-bionic/total?color=blueviolet)](https://github.com/bd-loser/opencode-bionic/releases)
+[![Release workflow](https://github.com/bd-loser/opencode-bionic/actions/workflows/opencode.yml/badge.svg)](https://github.com/bd-loser/opencode-bionic/actions/workflows/opencode.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow)](./LICENSE)
 <!-- versions:badges -->
 [![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core)
 [![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
 <!-- /versions:badges -->
 
-**Keywords:** opencode android · opencode termux · opencode aarch64 ·
-AI coding agent android · Claude Code alternative on phone · LLM CLI
-termux · sst opencode android port.
-
----
-
 ## Install
+
+One command, inside [Termux](https://termux.dev) (F-Droid or GitHub — not
+the Play Store build):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
 ```
 
-Grabs the latest **stable** `.deb` from [Releases](https://github.com/bd-loser/opencode-bionic/releases),
-verifies its SHA256 checksum, and installs via `dpkg`.
+Grabs the latest **stable** `.deb`, verifies its SHA256, installs with
+`dpkg`. Then just run `opencode`.
 
 ### Channels
 
-Stable builds come from an upstream opencode release tag. Prereleases are
-built from upstream's `dev` branch and are tagged `v<version>-dev.<short-sha>`
-— newer, but not something upstream has blessed.
+Upstream ships three release lines; we mirror all of them, within minutes:
+
+| Channel | Built from | Our tag pattern | Env |
+|---|---|---|---|
+| **stable** *(default)* | upstream release tags | `vX.Y.Z` | — |
+| **beta** | upstream `beta` branch | `vX.Y.Z-beta.<sha8>` | `OPENCODE_CHANNEL=beta` |
+| **dev** | upstream `dev` branch | `vX.Y.Z-dev.<sha8>` | `OPENCODE_CHANNEL=dev` |
 
 ```bash
-# newest stable (the default)
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_CHANNEL=beta bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_CHANNEL=dev bash
 
-# newest dev build
-curl -fsSL .../install.sh | OPENCODE_CHANNEL=prerelease bash
-
-# a specific upstream commit (any sha prefix, 4+ chars)
-curl -fsSL .../install.sh | OPENCODE_COMMIT=fe82a1b6 bash
-
-# an exact version, either kind
-curl -fsSL .../install.sh | OPENCODE_VERSION=1.18.15 bash
-curl -fsSL .../install.sh | OPENCODE_VERSION=1.18.15-dev.fe82a1b6 bash
+# pin an exact release (any channel) or an upstream commit
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_VERSION=<version> bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_COMMIT=<sha> bash
 ```
 
-The default channel resolves through `/releases/latest`, which GitHub
-computes while ignoring prereleases — so a dev build can never reach a user
-who did not ask for one by name.
-
-Dev builds are produced automatically: `watch-upstream.yml` polls upstream
-every 12 hours and, when there is no new upstream *release* to mirror, builds
-whatever new commits landed on `dev`. The five most recent are kept — about
-2.5 days of history at that cadence — and older ones are pruned. Stable
-releases are never pruned.
-
-Manual install:
-
-```bash
-curl -LO https://github.com/bd-loser/opencode-bionic/releases/latest/download/opencode_<version>_aarch64.deb
-dpkg -i opencode_<version>_aarch64.deb
-opencode --version
-```
+`/releases/latest` only ever points at **stable** — beta and dev builds are
+prereleases and can never reach you unless you ask. Everything is
+automated: upstream moves are detected and mirrored without a human
+pressing anything, usually within minutes.
 
 ## What is opencode?
 
-[opencode](https://opencode.ai) is an open-source, terminal-based AI coding
-agent — think Claude Code / Cursor / Aider, but MIT-licensed and
-model-agnostic (Anthropic, OpenAI, local models via any OpenAI-compatible
-endpoint). Upstream is developed at
-[anomalyco/opencode](https://github.com/anomalyco/opencode) (formerly
-`sst/opencode`) and ships prebuilt binaries for macOS, Linux, and Windows —
-**but not Android / Termux**. That's what this repo fixes.
+An open-source, terminal-based AI coding agent — MIT-licensed and
+model-agnostic (Anthropic, OpenAI, OpenRouter, local models via any
+OpenAI-compatible endpoint). Developed at
+[anomalyco/opencode](https://github.com/anomalyco/opencode), with prebuilt
+binaries for macOS, Linux, and Windows — **but none for Android**.
+This repo provides the Android line.
 
-## Why this fork exists (the hard part)
+## Why a separate build is needed
 
-opencode's TUI is powered by [opentui](https://opentui.com) — a native Zig
-library with TypeScript bindings. Upstream `@opentui/core` supports only
-darwin / linux / win32, and the Linux binary is a **glibc** build that
-Android's Bionic linker rejects outright. Making opencode run on Termux
-required three separate pieces of work, all maintained in this org:
+opencode's TUI runs on [opentui](https://opentui.com), a native Zig
+library. Upstream ships only glibc binaries; Android's Bionic linker
+rejects them outright. This project assembles the three pieces that make
+opencode run natively on Bionic:
 
-| Component | What was done | Repo |
-|---|---|---|
-| **Bun runtime** | Patched Bun 1.4.0 to run under Bionic libc — source-level fixes: TinyCC enabled (SELinux-safe JIT), fchmodat2/openat2 seccomp-trap bypass, shebang remap, FFI paths. Ships as a Termux `.deb`. | [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) (original, not a fork) |
-| **opentui native lib** | Rebuilt `libopentui.so` for `android-arm64` (Bionic ABI, 16 KiB page-size aligned). Published as [`@androidtui/core-android-arm64`](https://www.npmjs.com/package/@androidtui/core-android-arm64) plus the `@androidtui/{core,keymap,solid}` JS packages that route to it. | [bd-loser/opentui](https://github.com/bd-loser/opentui) (fork of anomalyco/opentui) |
-| **opencode delta** | Quilt-style patch set on top of upstream opencode that swaps `@opentui/*` for the `@androidtui/*` builds via Bun workspace catalog pins, and fixes the Termux-specific build script. | **bd-loser/opencode-bionic** (this repo, original) |
+- a **Bun runtime** patched for Bionic libc (SELinux-safe JIT, syscall
+  traps, shebang remap, FFI paths),
+- **opentui rebuilt for android-arm64**, published as `@androidtui/*`
+  npm packages (16 KiB-page-aligned Bionic `.so`),
+- **this repo**: the patch delta + version pins + release pipeline that
+  ties it together and ships a single self-contained binary.
 
-Everything above was authored by [@bd-loser](https://github.com/bd-loser).
-Upstream credit goes to [opencode](https://github.com/anomalyco/opencode)
-(the coding agent itself) and [opentui](https://github.com/anomalyco/opentui)
-(the TUI library).
+## Docs
 
-## Architecture
+- [Architecture & release pipeline](./docs/ARCHITECTURE.md)
+- [Building on device / from source](./docs/BUILDING.md)
 
-This repo does **not** vendor an upstream clone. It holds only the delta:
+## Current pins
 
-```
-opencode-bionic/
-├── versions.json              # pinned upstream version + @androidtui versions
-├── install.sh                 # curl | bash installer
-├── termux/
-│   ├── patches/               # unified-diff patches applied to upstream
-│   │   └── 0001-*.patch         (packages/cli/script/build.ts)
-│   ├── ci/
-│   │   ├── fetch-upstream.sh    # git clone --depth 1 -b vX.Y.Z
-│   │   ├── versions.ts          # apply config delta (package.json edits)
-│   │   ├── apply-patches.sh     # patch -p1 --forward termux/patches/*
-│   │   ├── prepare-build-tree.sh# fetch + versions + patch, one command
-│   │   ├── refresh-patches.sh   # regenerate patches after upstream bump
-│   │   ├── build-on-runner.sh   # GHA runner side: launches termux-docker
-│   │   ├── build-in-container.sh# inside termux-docker: bun install + build
-│   │   └── package-deb.sh       # wraps binary as .deb
-│   └── setup.sh, rebuild-opencode.sh, ...   # local dev workflows
-└── .github/workflows/
-    ├── release.yml              # build + publish a .deb + create release
-    └── watch-upstream.yml       # every 12h: bump versions.json + release
-```
-
-Upstream is fetched fresh at build time via `git clone --depth 1 -b v$(jq -r
-.opencode versions.json)`, then `versions.ts` mutates package.json files
-(catalog aliases, optionalDeps, install-hook removal), then `patch -p1
---forward` applies the source patches (git am can't three-way merge a
-shallow clone). This mirrors how Debian, Nixpkgs, Alpine, and
-Homebrew maintain downstream deltas — patches either apply cleanly or CI
-fails loudly.
-
-## Bundled versions
-
-Everything is pinned in [`versions.json`](./versions.json). Bump that file
-and everything else follows: `versions.ts` rewrites config, `watch-upstream`
-picks up the bump on its next run.
+This channel's exact build inputs, regenerated automatically on every
+release. Other channels live on their own branch
+([beta](https://github.com/bd-loser/opencode-bionic/tree/beta) /
+[dev](https://github.com/bd-loser/opencode-bionic/tree/dev)), all sourced from
+[`versions.json`](./versions.json).
 
 <!-- versions:table -->
 | Component | Version |
@@ -144,98 +93,54 @@ picks up the bump on its next run.
 | opencode (upstream) | `2.0.26` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
-| `bun-termux` runtime | `1.4.2-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
+| `bun-termux` runtime | `1.4.3-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
 <!-- /versions:table -->
-
-## Quick Start (local dev on your Termux phone)
-
-```bash
-# 1. Prerequisites (one-time)
-pkg update && pkg upgrade
-pkg install git python build-essential clang make
-
-# Install patched bun-termux
-curl -fsSL https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh | bash
-bun --version   # should print 1.4.0
-
-# 2. Clone this fork
-git clone https://github.com/bd-loser/opencode-bionic.git ~/opencode-bionic
-cd ~/opencode-bionic
-
-# 3. One-command setup (fetches upstream, applies delta, installs deps)
-bash termux/setup.sh
-
-# 4. Build + install the compiled binary
-bash termux/rebuild-opencode.sh
-
-# 5. Run from anywhere
-opencode
-opencode --version
-```
-
-## Refreshing patches after upstream drift
-
-If `apply-patches.sh` fails after an upstream bump, the patches need
-rebasing:
-
-```bash
-# Prepare a working tree with the current patches applied on the new version
-bash termux/ci/prepare-build-tree.sh /tmp/refresh
-
-# Fix conflicts / edit files
-cd /tmp/refresh
-$EDITOR packages/core/src/filesystem/fff.bun.ts
-git add -A && git commit --amend --no-edit  # or make new commits
-
-# Regenerate patches back into repo
-bash "$OLDPWD/termux/ci/refresh-patches.sh" /tmp/refresh
-```
 
 ## FAQ
 
-**Does this work on non-rooted Android?**
-Yes. Termux runs unrooted. This is a plain Termux `.deb` — no root, no
-proot, no chroot.
+<details>
+<summary><b>Root needed? 32-bit? Which Android version?</b></summary>
 
-**Does it work on 32-bit ARM (armv7) or x86 Android?**
-No. Only aarch64 (arm64-v8a) is built. That covers essentially every
-Android device made in the last ~7 years.
+No root, no proot, no chroot. Only aarch64 (arm64-v8a) is built, which
+covers essentially every Android device from the last ~7 years. Minimum
+Android version: whatever Termux itself supports (7.0+).
+</details>
 
-**Which minimum Android version?**
-Anything Termux supports (Android 7.0+). Bionic-libc compatibility is
-handled by the patched Bun.
+<details>
+<summary><b>Why not just `npm install -g opencode` in Termux?</b></summary>
 
-**Is this the same as running `npm install -g opencode` in Termux?**
-No, and that path is broken. Upstream opencode pulls in `@opentui/core`,
-which tries to load a glibc `.so` — Bionic rejects it. This build swaps in
-`@androidtui/*` (Bionic-native) and ships a single self-contained
-`opencode` binary compiled by Bun.
+Because it's broken: opencode pulls in `@opentui/core`, which loads a
+glibc `.so` that Bionic refuses. This build substitutes the Bionic-native
+`@androidtui/*` packages and compiles everything into one self-contained
+binary.
+</details>
 
-**Which LLM providers work?**
-Same as upstream opencode: Anthropic Claude, OpenAI, and any
-OpenAI-compatible endpoint (OpenRouter, Groq, local Ollama, etc.).
-Configuration is identical to upstream — see
-[opencode docs](https://opencode.ai/docs).
+<details>
+<summary><b>Which LLM providers work?</b></summary>
 
-**Is it up to date with upstream?**
-Yes. `.github/workflows/watch-upstream.yml` polls upstream every 12 hours,
-bumps `versions.json`, rebuilds, and publishes a matching release
-automatically. Between upstream releases it builds new `dev` commits as
-prereleases — see [Channels](#channels). Version parity is a design goal.
+All of upstream's: Anthropic, OpenAI, and any OpenAI-compatible endpoint
+(OpenRouter, Groq, Ollama, …). Configuration is identical to upstream —
+see [opencode.ai/docs](https://opencode.ai/docs).
+</details>
 
-**How does it compare to Claude Code / Cursor / Aider?**
-opencode is the underlying agent — this repo just makes it run on Android.
-Feature comparisons belong to upstream opencode.
+<details>
+<summary><b>How fast do updates land?</b></summary>
 
-## Related repos (all maintained by [@bd-loser](https://github.com/bd-loser))
+Automatically, within minutes — upstream stable, beta, and dev activity
+each trigger a matching build and release here. Version parity is a
+design goal, not a task. See [Channels](#channels).
+</details>
 
-| Repo | Purpose | Fork? |
-|---|---|---|
-| [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) | Bun v1.4.0 patched for Bionic Android (TinyCC, seccomp traps, shebangs, FFI). | Original |
-| [bd-loser/opentui](https://github.com/bd-loser/opentui) | opentui + native `libopentui.so` rebuilt for android-arm64. Publishes the `@androidtui/*` npm packages. | Fork of [anomalyco/opentui](https://github.com/anomalyco/opentui) |
-| **bd-loser/opencode-bionic** (this repo) | opencode delta + release pipeline that ties it all together. | Original |
+## Related repos
+
+| Repo | Role |
+|---|---|
+| [bd-loser/bun-termux](https://github.com/bd-loser/bun-termux) | Bun runtime patched for Bionic (original) |
+| [bd-loser/opentui](https://github.com/bd-loser/opentui) | opentui android-arm64 rebuild, publishes `@androidtui/*` (fork of [anomalyco/opentui](https://github.com/anomalyco/opentui)) |
+
+Upstream credit: [anomalyco/opencode](https://github.com/anomalyco/opencode)
+and [anomalyco/opentui](https://github.com/anomalyco/opentui).
 
 ## License
 
-MIT — same as upstream [opencode](https://github.com/anomalyco/opencode).
-See [LICENSE](./LICENSE).
+MIT — same as upstream opencode. See [LICENSE](./LICENSE).
