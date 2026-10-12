@@ -362,6 +362,7 @@ jobs:
           fi
           {
             printf 'opencode v%s — Termux/Bionic aarch64 build (%s channel).\n\n%s\n' "$RELEASE" "$CHANNEL" "$SOURCE"
+            printf '\n> **Channels:** [stable](https://github.com/%s/releases/latest) · [all prereleases (beta & dev)](https://github.com/%s/releases?q=prerelease%%3Atrue&expanded=true) · [tags](https://github.com/%s/tags) — install one-liners: https://github.com/%s#channels\n' "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY"
             if [ -n "$UP_DESC" ]; then printf '\n## %s\n\n%s\n' "$UP_TITLE" "$UP_DESC"; fi
             printf '\nInstall:\n\n```\ncurl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | %sbash\n```\n\n' "$GITHUB_REPOSITORY" "$INSTALL_ENV"
             printf 'Legacy: curl -LO https://github.com/%s/releases/download/%s/opencode_%s_aarch64.deb && dpkg -i opencode_%s_aarch64.deb\n\n' "$GITHUB_REPOSITORY" "$TAG" "$RELEASE" "$RELEASE"

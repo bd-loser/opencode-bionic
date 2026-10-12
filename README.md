@@ -47,8 +47,11 @@ curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/insta
 ```
 
 `/releases/latest` only ever points at **stable** — beta and dev builds are
-prereleases and can never reach you unless you ask. Everything is
-automated: upstream moves are detected and mirrored without a human
+prereleases and can never reach you unless you ask. Browse the artifacts
+directly instead of installing: [all releases](https://github.com/bd-loser/opencode-bionic/releases)
+· [beta & dev](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true)
+· [tags](https://github.com/bd-loser/opencode-bionic/tags). Everything is
+automated: new upstream moves are detected and mirrored without a human
 pressing anything, usually within minutes.
 
 ## What is opencode?
