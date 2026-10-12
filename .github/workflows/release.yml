@@ -105,9 +105,7 @@ jobs:
               # changed. Stability then follows the prerelease input.
               RELEASE="${INPUT_VERSION#v}"
             else
-              # Rolling-branch build: suffix with the channel + commit, e.g.
-              # v2.0.26-dev.d21b0790 / v2.0.6-beta.9b4ec571. Upstream labels
-              # these lines with npm dist-tags beta/dev; we mirror the names.
+              # Rolling build: <version>-<channel>.<sha>, mirroring upstream's npm dist-tags.
               RELEASE="${VERSION}-${CHANNEL}.${SHORT}"
               # A build off a moving branch is never "Latest": install.sh
               # follows /releases/latest, which skips prereleases.

@@ -1,11 +1,10 @@
 name: watch-upstream
 
-# Mirrors upstream releases and stability, or builds the latest unseen dev
-# commit when no release bump is pending. Watches the three upstream lines
-# the same way upstream itself labels its npm dist-tags:
-#   stable → latest GitHub release   (ships to /releases/latest)
-#   beta   → 'beta' branch head      (prerelease, tagged -beta.<sha>)
-#   dev    → 'dev' branch head       (prerelease, tagged -dev.<sha>)
+# Watches the three upstream lines and dispatches release.yml per channel.
+# Each channel builds from the branch carrying its patch kit:
+#   stable -> upstream release tag -> branch main (vX.Y.Z, latest)
+#   beta   -> upstream beta head   -> branch beta (vX.Y.Z-beta.<sha>, prerelease)
+#   dev    -> upstream dev head    -> branch dev  (vX.Y.Z-dev.<sha>, prerelease)
 
 on:
   schedule:
@@ -42,11 +41,6 @@ concurrency:
 env:
   UPSTREAM: anomalyco/opencode
   OURS: ${{ github.repository }}
-  # Rolling (beta/dev) trees are 2.x and the patch kit is layout-specific,
-  # so prerelease builds run from the branch that carries the 2.x kit — not
-  # main, which still builds the 1.x stable line. Flip this ref (or merge
-  # that branch) once upstream stable moves to 2.x.
-  ROLLING_REF: feat/2x-port
 
 jobs:
   watch:
@@ -294,12 +288,12 @@ jobs:
           # step and the clone, and then the build would produce a tag other
           # than the one the dedup check above cleared.
           gh workflow run release.yml \
-            --ref "$ROLLING_REF" \
+            --ref dev \
             -f upstream_ref="$SHA" \
             -f channel=dev \
             -f draft="$DRAFT" \
             -f prerelease=true
-          echo "dispatched dev build of $SHA → $TAG from $ROLLING_REF (prerelease)"
+          echo "dispatched dev build of $SHA → $TAG (prerelease)"
 
       - name: Dev dry-run summary
         if: steps.dev.outputs.build == 'true' && inputs.dry_run == true
@@ -370,12 +364,12 @@ jobs:
         run: |
           set -eu
           gh workflow run release.yml \
-            --ref "$ROLLING_REF" \
+            --ref beta \
             -f upstream_ref="$SHA" \
             -f channel=beta \
             -f draft="$DRAFT" \
             -f prerelease=true
-          echo "dispatched beta build of $SHA → $TAG from $ROLLING_REF (prerelease)"
+          echo "dispatched beta build of $SHA → $TAG (prerelease)"
 
       - name: Beta dry-run summary
         if: steps.beta.outputs.build == 'true' && inputs.dry_run == true
