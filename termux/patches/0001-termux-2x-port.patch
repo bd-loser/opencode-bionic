@@ -71,11 +71,11 @@ index 7f22183..2120aba 100755
      setup(build) {
        build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
 -        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
-+        // Bionic has no @parcel/watcher prebuilt. A module that throws on
-+        // load takes watcher-binding.ts's existing guarded-require path,
-+        // so watcher.ts falls back to polling exactly like a missing dep.
++        // Bionic has no @parcel/watcher prebuilt. A default export that
++        // throws when called keeps watcher-binding.ts's guarded-require
++        // shape, so watcher.ts falls back to polling like a missing dep.
 +        contents: isTermux
-+          ? `throw new Error("opencode: @parcel/watcher has no android/bionic binding")`
++          ? `export default () => { throw new Error("opencode: @parcel/watcher has no android/bionic binding") }`
 +          : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
          loader: "js",
        }))
