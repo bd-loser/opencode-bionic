@@ -4,9 +4,9 @@
 # Usage:
 #   bash termux/ci/apply-patches.sh <target_dir>
 #
-# Runs `git am --3way` for every termux/patches/*.patch, in filename order.
-# On conflict, aborts the am and prints a diagnostic so CI fails loudly at
-# the patch step (not the build step) when upstream drifts.
+# Runs `patch -p1 --forward` for every termux/patches/*.patch, in filename
+# order. On a rejected hunk, exits non-zero so CI fails loudly at the patch
+# step (not the build step) when upstream drifts.
 
 set -euo pipefail
 
@@ -34,16 +34,20 @@ for p in "${PATCHES[@]}"; do
   echo "  ▸ $(basename "$p")"
 done
 
-if ! git -C "$TARGET" am --3way "${PATCHES[@]}"; then
-  echo "" >&2
-  echo "error: patch application failed." >&2
-  echo "" >&2
-  echo "  If upstream renamed or restructured files, regenerate patches:" >&2
-  echo "    1. Resolve the conflict in $TARGET (edit, git add, git am --continue)" >&2
-  echo "    2. bash termux/ci/refresh-patches.sh $TARGET" >&2
-  echo "" >&2
-  echo "  Otherwise abort with: git -C $TARGET am --abort" >&2
-  exit 1
-fi
+# Use patch -p1 --forward directly. git am --3way fails on shallow clones
+# (no parent blobs) and leaves the tree partially modified, which then makes
+# patch -p1 see changes as "already applied".
+for p in "${PATCHES[@]}"; do
+  patch -d "$TARGET" -p1 --forward -i "$p" || {
+    echo "" >&2
+    echo "error: patch -p1 failed for $(basename "$p")." >&2
+    echo "" >&2
+    echo "  If upstream renamed or restructured files, regenerate patches:" >&2
+    echo "    1. Resolve the conflict in $TARGET (edit, git add)" >&2
+    echo "    2. bash termux/ci/refresh-patches.sh $TARGET" >&2
+    echo "" >&2
+    exit 1
+  }
+done
 
 echo "→ patches applied cleanly."

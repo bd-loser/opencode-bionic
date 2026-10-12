@@ -4,11 +4,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
 #
 # Installs the newest STABLE release by default. Stable builds come from an
-# upstream opencode release tag; prereleases are built from upstream's `dev`
-# branch and are named <version>-dev.<short-sha>.
+# upstream opencode release tag; prereleases mirror upstream's own lines and
+# are named <version>-<channel>.<short-sha>, channel = beta or dev.
 #
 # Env overrides:
-#   OPENCODE_CHANNEL  stable (default) | prerelease
+#   OPENCODE_CHANNEL  stable (default) | beta | dev | prerelease (any line)
 #   OPENCODE_VERSION  exact version or tag, e.g. 1.18.15 or
 #                     1.18.15-dev.fe82a1b6 (takes precedence over CHANNEL)
 #   OPENCODE_COMMIT   install the dev build made from this upstream commit;
@@ -17,7 +17,8 @@
 #
 # Examples:
 #   curl -fsSL .../install.sh | bash                              # stable
-#   curl -fsSL .../install.sh | OPENCODE_CHANNEL=prerelease bash  # newest dev
+#   curl -fsSL .../install.sh | OPENCODE_CHANNEL=beta bash        # newest beta line
+#   curl -fsSL .../install.sh | OPENCODE_CHANNEL=dev bash         # newest dev
 #   curl -fsSL .../install.sh | OPENCODE_COMMIT=fe82a1b6 bash     # one commit
 
 set -euo pipefail
@@ -56,9 +57,9 @@ done
 API="https://api.github.com/repos/$REPO"
 
 case "$CHANNEL" in
-  stable | prerelease) ;;
+  stable | beta | dev | prerelease) ;;
   *)
-    red "OPENCODE_CHANNEL must be 'stable' or 'prerelease', got: $CHANNEL"
+    red "OPENCODE_CHANNEL must be 'stable', 'beta', 'dev', or 'prerelease', got: $CHANNEL"
     exit 1
     ;;
 esac
@@ -98,6 +99,13 @@ if [ -n "$COMMIT" ]; then
   fi
 elif [ -n "$VERSION" ]; then
   TAG="v${VERSION#v}"
+elif [ "$CHANNEL" = "beta" ] || [ "$CHANNEL" = "dev" ]; then
+  say "Resolving newest $CHANNEL prerelease from $REPO…"
+  TAG="$(pick_release "select(.tag_name | test(\"-${CHANNEL}\\\\.[0-9a-f]{8}$\"))")"
+  if [ -z "$TAG" ]; then
+    red "No $CHANNEL prerelease found. Set OPENCODE_VERSION explicitly."
+    exit 1
+  fi
 elif [ "$CHANNEL" = "prerelease" ]; then
   # Newest of either kind: a stable release published after the last dev
   # build is strictly newer, and pinning users to a stale dev build because
