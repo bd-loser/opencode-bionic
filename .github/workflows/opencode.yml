@@ -1,0 +1,374 @@
+name: opencode
+run-name: opencode ${{ inputs.channel }}${{ inputs.upstream_ref && format(' @ {0}', inputs.upstream_ref) || '' }}${{ inputs.draft && ' (draft)' || '' }}
+
+# One workflow for every channel and both modes:
+#   channel=auto   detect what's new upstream and build each pending line
+#                  in one run (intended trigger: a poller, or a manual run)
+#   channel=X      force one line (stable/beta/dev); `upstream_ref`/`version`
+#                  pick the tree; rolling tags are replaced, stable tags
+#                  never are.
+#
+# Each leg checks out the branch carrying its patch kit:
+#   stable -> main (vX.Y.Z)      beta -> beta (vX.Y.Z-beta.<sha>)
+#   dev    -> dev   (vX.Y.Z-dev.<sha>)
+# Keep this file byte-identical on all three branches.
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "auto = scan all lines; or force one"
+        type: choice
+        options: [auto, stable, beta, dev]
+        default: auto
+      upstream_ref:
+        description: "With channel!=auto: upstream branch/sha/tag to build (default: the channel's branch head)"
+        required: false
+        default: ""
+      version:
+        description: "Force the published version (hotfix re-ships; blank = derive)"
+        required: false
+        default: ""
+      prerelease:
+        description: "Only honored with an explicit version on stable"
+        type: boolean
+        default: false
+      draft:
+        description: "Create releases as drafts"
+        type: boolean
+        default: false
+      dry_run:
+        description: "Report the plan, build nothing, commit nothing"
+        type: boolean
+        default: false
+
+concurrency:
+  group: opencode
+  cancel-in-progress: false
+
+env:
+  UPSTREAM: anomalyco/opencode
+  OURS: ${{ github.repository }}
+
+jobs:
+  detect:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    timeout-minutes: 10
+    outputs:
+      legs: ${{ steps.plan.outputs.legs }}
+      count: ${{ steps.plan.outputs.count }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Sync stability of existing releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          gh release list --repo "$OURS" -L 20 \
+              --json tagName,isPrerelease,isDraft --jq '.[]' > "$RUNNER_TEMP/ours.jsonl" || true
+          flipped=0
+          while IFS= read -r row; do
+            tag="$(echo "$row" | jq -r .tagName)"
+            our_pre="$(echo "$row" | jq -r .isPrerelease)"
+            [ "$(echo "$row" | jq -r .isDraft)" = "true" ] && continue
+            up_pre="$(gh release view "$tag" --repo "$UPSTREAM" --json isPrerelease --jq .isPrerelease 2>/dev/null || true)"
+            [ -z "$up_pre" ] && continue
+            if [ "$our_pre" != "$up_pre" ]; then
+              echo "  $tag: ours=$our_pre upstream=$up_pre -> flipping"
+              gh release edit "$tag" --repo "$OURS" --prerelease="$up_pre"
+              flipped=$((flipped + 1))
+            fi
+          done < "$RUNNER_TEMP/ours.jsonl"
+          echo "flipped $flipped release(s) to match upstream stability"
+
+      - name: Plan release legs
+        id: plan
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CHANNEL: ${{ inputs.channel }}
+          REF_IN: ${{ inputs.upstream_ref }}
+          VERSION_IN: ${{ inputs.version }}
+          PRE_IN: ${{ inputs.prerelease }}
+          DRAFT_IN: ${{ inputs.draft }}
+          DRY: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          LEGS="$RUNNER_TEMP/legs"; rm -rf "$LEGS"; mkdir -p "$LEGS"
+          [ "$DRAFT_IN" = "true" ] && DRAFT_JSON=true || DRAFT_JSON=false
+
+          add_leg() { # channel kit upstream_ref version prerelease
+            jq -cn --arg c "$1" --arg k "$2" --arg r "$3" --arg v "$4" --arg p "$5" \
+              --argjson d "$DRAFT_JSON" \
+              '{channel:$c, kit:$k, upstream_ref:$r, version:$v, prerelease:($p=="true"), draft:$d}' \
+              > "$LEGS/$1.json"
+            echo "leg: $1 (kit=$2 upstream_ref=${3:-versions.json} version=${4:-auto} prerelease=$5)"
+          }
+
+          probe_version() { # sha -> version at that commit, or empty.
+            # Upstream moved the version from packages/opencode to root
+            # package.json after 1.x; probe both and never emit empty.
+            local v
+            v="$(gh api "repos/$UPSTREAM/contents/package.json?ref=$1" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            if [ -z "$v" ] || [ "$v" = "null" ]; then
+              v="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$1" \
+                --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            fi
+            { [ -n "$v" ] && [ "$v" != "null" ]; } && printf '%s' "$v" || true
+          }
+
+          head_is_release() { # sha -> release tag it sits on, or empty
+            local rt rs
+            rt="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 20 \
+              --json tagName --jq '[.[]|select(.tagName|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0].tagName // empty')"
+            [ -n "$rt" ] || return 0
+            rs="$(gh api "repos/$UPSTREAM/commits/$rt" --jq .sha 2>/dev/null || true)"
+            [ "$rs" = "$1" ] && printf '%s' "$rt" || true
+          }
+
+          if [ "$CHANNEL" != "auto" ]; then
+            # Forced single line.
+            if [ "$CHANNEL" = "stable" ] && [ -z "$REF_IN" ] && [ -z "$VERSION_IN" ]; then
+              echo "channel=stable without ref/version: use auto for the stable bump" >&2; exit 1
+            fi
+            SHA=""; VER="$VERSION_IN"; PRE="$PRE_IN"
+            if [ "$CHANNEL" != "stable" ]; then
+              REF="${REF_IN:-$CHANNEL}"   # default: the channel's own branch
+              SHA="$(gh api "repos/$UPSTREAM/commits/$REF" --jq .sha)"
+            elif [ -n "$REF_IN" ]; then
+              SHA="$(gh api "repos/$UPSTREAM/commits/$REF_IN" --jq .sha)"
+            fi
+            if [ -z "$VER" ] && [ -n "$SHA" ]; then
+              VER="$(probe_version "$SHA")"
+              [ -n "$VER" ] || { echo "error: cannot determine version at $SHA" >&2; exit 1; }
+            fi
+            [ "$CHANNEL" = "stable" ] || { [ -n "$VERSION_IN" ] || PRE=true; }
+            KIT="$CHANNEL"; [ "$CHANNEL" = "stable" ] && KIT="main"
+            add_leg "$CHANNEL" "$KIT" "$SHA" "$VER" "$PRE"
+          else
+            # --- stable: newest semver release we don't mirror yet ----------
+            row="$(gh release list --repo "$UPSTREAM" --exclude-drafts -L 20 \
+              --json tagName,isPrerelease \
+              --jq '[.[]|select(.tagName|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))] | .[0]')"
+            [ "$row" != "null" ] && [ -n "$row" ] || { echo "::error::no semver release on $UPSTREAM" >&2; exit 1; }
+            LATEST_TAG="$(echo "$row" | jq -r .tagName)"
+            LATEST="${LATEST_TAG#v}"
+            UP_PRE="$(echo "$row" | jq -r .isPrerelease)"
+            CUR="$(jq -r .opencode versions.json)"
+            if gh release view "$LATEST_TAG" --repo "$OURS" >/dev/null 2>&1; then
+              [ "$CUR" = "$LATEST" ] || echo "pin lags upstream ($CUR -> $LATEST) though the release exists; leaving it"
+              echo "stable $LATEST_TAG already mirrored"
+            else
+              if [ "${GITHUB_REF:-}" != "refs/heads/main" ]; then
+                echo "::warning::auto must run from main (stable bump commits there); stable skipped"
+              else
+              # Bump the pin in-memory so the preflight clones the new tree,
+              # and commit it only if the kit still applies.
+              jq --arg v "$LATEST" '.opencode=$v' versions.json > "$RUNNER_TEMP/vj" && mv "$RUNNER_TEMP/vj" versions.json
+              bun termux/ci/versions.ts apply >/dev/null
+              bun termux/ci/versions.ts check  >/dev/null
+              if [ "$DRY" != "true" ] && bash termux/ci/prepare-build-tree.sh "$RUNNER_TEMP/preflight-$LATEST" >/dev/null 2>&1; then
+                git config user.name  "github-actions[bot]"
+                git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+                git add versions.json README.md
+                git commit -q -m "chore(upstream): bump opencode $CUR -> $LATEST" \
+                            -m "Auto-bumped by opencode.yml from $UPSTREAM."
+                git push -q origin HEAD:main
+                add_leg stable main "" "$LATEST" "$UP_PRE"
+              elif [ "$DRY" = "true" ]; then
+                add_leg stable main "" "$LATEST" "$UP_PRE"
+              else
+                echo "::error::patches do not apply to upstream $LATEST_TAG — stable skipped; fix the kit on main"
+                git checkout -q -- versions.json README.md
+              fi
+              fi
+            fi
+
+            # --- rolling lines ----------------------------------------------
+            for line in dev beta; do
+              sha="$(gh api "repos/$UPSTREAM/commits/$line" --jq .sha)"
+              short="${sha:0:8}"
+              ver="$(probe_version "$sha")"
+              if [ -z "$ver" ]; then echo "no version at $line/$short — skipping"; continue; fi
+              tag="v${ver}-${line}.${short}"
+              if gh release view "$tag" --repo "$OURS" >/dev/null 2>&1; then
+                echo "$line: $tag already released"; continue
+              fi
+              if [ -n "$(head_is_release "$sha")" ]; then
+                echo "$line head is a release tag — stable path covers it"; continue
+              fi
+              add_leg "$line" "$line" "$sha" "" true
+            done
+          fi
+
+          if [ "$DRY" = "true" ]; then
+            echo "dry run: legs below, building nothing"
+            cat "$LEGS"/*.json 2>/dev/null || echo "(none)"
+            echo "legs=[]" >> "$GITHUB_OUTPUT"; echo "count=0" >> "$GITHUB_OUTPUT"
+          elif compgen -G "$LEGS/*.json" > /dev/null; then
+            LEGS_JSON="$(jq -s -c . "$LEGS"/*.json)"
+            echo "legs=$LEGS_JSON" >> "$GITHUB_OUTPUT"
+            echo "count=$(echo "$LEGS_JSON" | jq length)" >> "$GITHUB_OUTPUT"
+          else
+            echo "legs=[]" >> "$GITHUB_OUTPUT"; echo "count=0" >> "$GITHUB_OUTPUT"
+            echo "nothing new upstream"
+          fi
+
+  build:
+    needs: detect
+    if: needs.detect.outputs.count != '0'
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        leg: ${{ fromJson(needs.detect.outputs.legs) }}
+    name: ${{ matrix.leg.channel }}
+    env:
+      CHANNEL: ${{ matrix.leg.channel }}
+    steps:
+      - name: Checkout kit branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.leg.kit }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Resolve version
+        id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ matrix.leg.version }}
+          INPUT_UPSTREAM_REF: ${{ matrix.leg.upstream_ref }}
+          INPUT_PRERELEASE: ${{ matrix.leg.prerelease }}
+        run: |
+          set -eu
+          PRERELEASE="$INPUT_PRERELEASE"
+          if [ -n "$INPUT_UPSTREAM_REF" ]; then
+            SHA="$INPUT_UPSTREAM_REF"
+            SHORT="${SHA:0:8}"
+            VERSION="$(gh api "repos/$UPSTREAM/contents/package.json?ref=$SHA" \
+              --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              VERSION="$(gh api "repos/$UPSTREAM/contents/packages/opencode/package.json?ref=$SHA" \
+                --jq .content 2>/dev/null | base64 -d 2>/dev/null | jq -r .version 2>/dev/null || true)"
+            fi
+            if [ -z "$VERSION" ] || [ "$VERSION" = "null" ]; then
+              echo "error: no version resolvable at $SHA" >&2; exit 1
+            fi
+            if [ -n "$INPUT_VERSION" ]; then
+              RELEASE="${INPUT_VERSION#v}"
+            else
+              RELEASE="${VERSION}-${CHANNEL}.${SHORT}"
+              PRERELEASE=true
+            fi
+            echo "ref=$SHA" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$CHANNEL" != "stable" ]; then
+              echo "error: channel=$CHANNEL requires an upstream_ref leg" >&2; exit 1
+            fi
+            VERSION="${INPUT_VERSION#v}"
+            [ -n "$VERSION" ] || VERSION="$(bun termux/ci/versions.ts print | grep '^OPENCODE_VERSION=' | cut -d= -f2)"
+            RELEASE="$VERSION"
+            echo "ref=" >> "$GITHUB_OUTPUT"
+          fi
+          echo "version=$VERSION"    >> "$GITHUB_OUTPUT"
+          echo "release=$RELEASE"    >> "$GITHUB_OUTPUT"
+          echo "tag=v$RELEASE"       >> "$GITHUB_OUTPUT"
+          echo "prerelease=$PRERELEASE" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL"    >> "$GITHUB_OUTPUT"
+
+      - name: Verify tag is usable
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          set -eu
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            if [ "$CHANNEL" = "stable" ]; then
+              echo "error: stable release $TAG already exists." >&2; exit 1
+            fi
+            echo "replacing existing rolling release $TAG"
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+
+      - name: Apply pinned versions
+        run: bun termux/ci/versions.ts apply
+
+      - name: Confirm versions match
+        run: bun termux/ci/versions.ts check
+
+      - name: Build inside termux-docker
+        env:
+          OPENCODE_VERSION: ${{ steps.version.outputs.release }}
+          OPENCODE_UPSTREAM_REF: ${{ steps.version.outputs.ref }}
+          OPENCODE_CHANNEL: ${{ steps.version.outputs.channel }}
+        run: bash termux/ci/build-on-runner.sh
+
+      - name: Package .deb
+        env:
+          VERSION: ${{ steps.version.outputs.release }}
+        run: |
+          set -eux
+          OUT_HOST="$(cd "$GITHUB_WORKSPACE/../out" && pwd)"
+          mkdir -p "$GITHUB_WORKSPACE/dist"
+          bash termux/ci/package-deb.sh "$OUT_HOST/opencode" "$VERSION" "$GITHUB_WORKSPACE/dist"
+          cp "$OUT_HOST/opencode" "$GITHUB_WORKSPACE/dist/opencode"
+          ( cd "$GITHUB_WORKSPACE/dist" && sha256sum opencode "opencode_${VERSION}_aarch64.deb" > SHA256SUMS )
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          RELEASE: ${{ steps.version.outputs.release }}
+          REF: ${{ steps.version.outputs.ref }}
+          DRAFT: ${{ matrix.leg.draft }}
+          PRERELEASE: ${{ steps.version.outputs.prerelease }}
+        run: |
+          set -eu
+          FLAGS=""
+          [ "$DRAFT" = "true" ] && FLAGS="$FLAGS --draft"
+          [ "$PRERELEASE" = "true" ] && FLAGS="$FLAGS --prerelease"
+          NOTES="$RUNNER_TEMP/release-notes.md"
+          if [ -n "$REF" ]; then
+            SOURCE="Built from [\`$(printf '%s' "$REF" | cut -c1-8)\`](https://github.com/anomalyco/opencode/commit/$REF) — upstream reports itself as v$VERSION at that commit."
+            UP_DESC="$(gh api "repos/$UPSTREAM/commits/$REF" --jq '.commit.message // empty' 2>/dev/null || true)"
+            UP_TITLE="Upstream commit"
+          else
+            SOURCE="Built from upstream tag [\`v$VERSION\`](https://github.com/anomalyco/opencode/releases/tag/v$VERSION)."
+            UP_DESC="$(gh api "repos/$UPSTREAM/releases/tags/v$VERSION" --jq '.body // empty' 2>/dev/null || true)"
+            UP_TITLE="Upstream release notes"
+          fi
+          if [ "$PRERELEASE" = "true" ]; then
+            INSTALL_ENV="OPENCODE_VERSION=$RELEASE "
+          else
+            INSTALL_ENV=""
+          fi
+          {
+            printf 'opencode v%s — Termux/Bionic aarch64 build (%s channel).\n\n%s\n' "$RELEASE" "$CHANNEL" "$SOURCE"
+            if [ -n "$UP_DESC" ]; then printf '\n## %s\n\n%s\n' "$UP_TITLE" "$UP_DESC"; fi
+            printf '\nInstall:\n\n```\ncurl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | %sbash\n```\n\n' "$GITHUB_REPOSITORY" "$INSTALL_ENV"
+            printf 'Legacy: curl -LO https://github.com/%s/releases/download/%s/opencode_%s_aarch64.deb && dpkg -i opencode_%s_aarch64.deb\n\n' "$GITHUB_REPOSITORY" "$TAG" "$RELEASE" "$RELEASE"
+            printf 'Files:\n- opencode_%s_aarch64.deb — Termux package\n- opencode — raw aarch64 ELF binary\n- SHA256SUMS — checksums\n\nBundled versions:\n- opencode: v%s\n- @opentui/*: %s\n' "$RELEASE" "$VERSION" "$(bun termux/ci/versions.ts print | grep OPENTUI_CORE= | cut -d= -f2)"
+          } > "$NOTES"
+          TITLE="v$RELEASE"
+          [ "$CHANNEL" != "stable" ] && TITLE="$TITLE ($CHANNEL)"
+          # shellcheck disable=SC2086
+          gh release create "$TAG" $FLAGS \
+            --title "$TITLE" \
+            --notes-file "$NOTES" \
+            dist/opencode_${RELEASE}_aarch64.deb \
+            dist/opencode \
+            dist/SHA256SUMS
