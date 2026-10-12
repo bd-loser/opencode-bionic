@@ -151,6 +151,10 @@ jobs:
             fi
             [ "$CHANNEL" = "stable" ] || { [ -n "$VERSION_IN" ] || PRE=true; }
             KIT="$CHANNEL"; [ "$CHANNEL" = "stable" ] && KIT="main"
+            # Rolling lines must leave version empty: the build job derives
+            # `<ver>-<channel>.<sha8>` from the ref. A leaked probe version
+            # would tag a bare vX.Y.Z prerelease instead (§ tags scheme).
+            [ "$CHANNEL" = "stable" ] || VER="$VERSION_IN"
             add_leg "$CHANNEL" "$KIT" "$SHA" "$VER" "$PRE"
           else
             # --- stable: newest semver release we don't mirror yet ----------
@@ -372,3 +376,22 @@ jobs:
             dist/opencode_${RELEASE}_aarch64.deb \
             dist/opencode \
             dist/SHA256SUMS
+
+      - name: Update rolling pin after build
+        if: ${{ matrix.leg.channel != 'stable' && github.event.inputs.dry_run != 'true' }}
+        continue-on-error: true   # release is already published; pin drift must not redden the run
+        env:
+          CHANNEL: ${{ steps.version.outputs.channel }}
+          PKGVER: ${{ steps.version.outputs.version }}
+        run: |
+          set -eu
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull -q --rebase origin "$CHANNEL"
+          CUR="$(jq -r .opencode versions.json)"
+          [ "$CUR" = "$PKGVER" ] && { echo "pin already at $PKGVER"; exit 0; }
+          jq --arg v "$PKGVER" '.opencode=$v' versions.json > "$RUNNER_TEMP/vj" && mv "$RUNNER_TEMP/vj" versions.json
+          bun termux/ci/versions.ts apply >/dev/null   # also refreshes README marker blocks
+          git add versions.json README.md
+          git commit -q -m "chore(kit): rolling point -> opencode $PKGVER (built v${PKGVER}-${CHANNEL})"
+          git push -q origin "HEAD:$CHANNEL"
