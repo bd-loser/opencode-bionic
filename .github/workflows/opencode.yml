@@ -60,7 +60,7 @@ jobs:
       legs: ${{ steps.plan.outputs.legs }}
       count: ${{ steps.plan.outputs.count }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -241,7 +241,7 @@ jobs:
       CHANNEL: ${{ matrix.leg.channel }}
     steps:
       - name: Checkout kit branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ matrix.leg.kit }}
 
@@ -380,7 +380,6 @@ jobs:
 
       - name: Update rolling pin after build
         if: ${{ matrix.leg.channel != 'stable' && github.event.inputs.dry_run != 'true' }}
-        continue-on-error: true   # release is already published; pin drift must not redden the run
         env:
           CHANNEL: ${{ steps.version.outputs.channel }}
           PKGVER: ${{ steps.version.outputs.version }}
@@ -388,11 +387,17 @@ jobs:
           set -eu
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull -q --rebase origin "$CHANNEL"
+          git fetch -q origin "$CHANNEL"
+          git reset -q --hard "origin/$CHANNEL"
           CUR="$(jq -r .opencode versions.json)"
-          [ "$CUR" = "$PKGVER" ] && { echo "pin already at $PKGVER"; exit 0; }
-          jq --arg v "$PKGVER" '.opencode=$v' versions.json > "$RUNNER_TEMP/vj" && mv "$RUNNER_TEMP/vj" versions.json
-          bun termux/ci/versions.ts apply >/dev/null   # also refreshes README marker blocks
+          if [ "$CUR" != "$PKGVER" ]; then
+            jq --arg v "$PKGVER" '.opencode=$v' versions.json > "$RUNNER_TEMP/vj" && mv "$RUNNER_TEMP/vj" versions.json
+          fi
+          bun termux/ci/versions.ts apply >/dev/null
           git add versions.json README.md
+          if git diff --cached --quiet; then
+            echo "pin and README already match $PKGVER"
+            exit 0
+          fi
           git commit -q -m "chore(kit): rolling point -> opencode $PKGVER (built v${PKGVER}-${CHANNEL})"
           git push -q origin "HEAD:$CHANNEL"
