@@ -2,11 +2,11 @@
   "$schema": "./versions.schema.json",
   "opencode": "2.0.28",
   "opentui": {
-    "core": "0.6.2",
-    "keymap": "0.6.2",
-    "solid": "0.6.2",
-    "react": "0.6.2",
-    "androidArm64Native": "0.6.2"
+    "core": "0.6.3",
+    "keymap": "0.6.3",
+    "solid": "0.6.3",
+    "react": "0.6.3",
+    "androidArm64Native": "0.6.3"
   },
   "bunTermux": {
     "version": "1.4.3-patched",
