@@ -1,0 +1,42 @@
+name: Bug report
+description: Something broke in an opencode-bionic build
+labels: [bug]
+body:
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Channel
+      options:
+        - stable
+        - beta
+        - dev
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: opencode --version output
+      placeholder: e.g. 1.19.1 / 2.0.30-dev.13263f30
+    validations:
+      required: true
+  - type: input
+    id: device
+    attributes:
+      label: Device and Android version
+      placeholder: e.g. Pixel 7, Android 15, Termux 0.119
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Expected vs actual behavior, and steps to reproduce.
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      render: shell
+      description: |
+        Run: OPENCODE_LOGLEVEL=DEBUG opencode ... 2>&1 | head -100

@@ -1,0 +1,25 @@
+name: Feature request
+description: Suggest an idea for this build kit or its releases
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What are you trying to do that currently doesn't work?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: Is this about OpenCode itself?
+      description: >
+        Features of OpenCode (not this Android build) belong upstream at
+        https://github.com/anomalyco/opencode/issues
+      options:
+        - label: I checked — this is about the Termux build, not upstream OpenCode
+          required: true
