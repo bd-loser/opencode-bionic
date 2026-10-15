@@ -103,8 +103,18 @@ if [ -z "$BUN_PTY_DIR" ]; then
 fi
 echo "→ embedding Bionic bun-pty $BUN_PTY_VERSION (npm prebuilt is glibc-only)"
 curl -fsSL -o "$BUN_PTY_DIR/librust_pty_arm64.so" "$BUN_PTY_URL"
-if ! file -b "$BUN_PTY_DIR/librust_pty_arm64.so" | grep -q "ARM aarch64"; then
-  echo "error: bun-pty Bionic .so is not an aarch64 shared object" >&2
+# The container ships no usable `file`/`readelf`; verify the ELF with python.
+if ! python3 - "$BUN_PTY_DIR/librust_pty_arm64.so" <<'PYELF'
+import struct, sys
+h = open(sys.argv[1], "rb").read(20)
+assert h[:4] == b"\x7fELF", "not an ELF"
+assert h[4] == 2, "not 64-bit"
+assert h[5] == 1, "not little-endian"
+machine = struct.unpack_from("<H", h, 18)[0]
+assert machine == 183, f"not AArch64 (e_machine={machine})"
+PYELF
+then
+  echo "error: bun-pty Bionic .so is not an aarch64 ELF" >&2
   exit 1
 fi
 echo "→ bun-pty Bionic embedded: $BUN_PTY_DIR/librust_pty_arm64.so"
