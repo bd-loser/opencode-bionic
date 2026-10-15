@@ -87,48 +87,27 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
-# The 1.x build can stub the optional native pty binding when absent. Only
-# install Rust/Zig and build it when explicitly requested.
-if [ "${OPENCODE_EMBED_PTY:-0}" = "1" ]; then
-  apt install -y rust zig
-  if [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
-  echo "→ building @opencode-ai/pty from source for Bionic"
-  PTY_SRC="$HOME/opencode-pty-src"
-  rm -rf "$PTY_SRC"
-  git clone --depth 1 https://github.com/anomalyco/opencode-pty.git "$PTY_SRC"
-  cd "$PTY_SRC"
-  # build.rs fetches Ghostty source and builds it with Zig; cargo builds the service.
-  cargo build --release
-  PTY_BIN="$(find target/release -name 'opencode-pty' -type f | head -1)"
-  if [ -z "$PTY_BIN" ]; then
-    echo "error: opencode-pty build produced no binary" >&2
-    exit 1
-  fi
-  PTY_PKG="$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu"
-  mkdir -p "$PTY_PKG/bin"
-  cp "$PTY_BIN" "$PTY_PKG/bin/opencode-pty"
-  chmod +x "$PTY_PKG/bin/opencode-pty"
-  cat > "$PTY_PKG/package.json" <<PKGJSON
-{
-  "name": "@opencode-ai/pty-linux-arm64-gnu",
-  "version": "0.2.0",
-  "description": "OpenCode persistent PTY service for linux-arm64 (Bionic build)",
-  "license": "MIT",
-  "os": ["linux"],
-  "cpu": ["arm64"],
-  "exports": {
-    "./package.json": "./package.json",
-    "./bin/opencode-pty": "./bin/opencode-pty"
-  },
-  "files": ["bin"]
-}
-PKGJSON
-  cd "$BUILD_ROOT"
-  echo "→ pty installed: $PTY_PKG/bin/opencode-pty ($(du -h "$PTY_PKG/bin/opencode-pty" | cut -f1))"
-  fi
-else
-  echo "→ skipping native pty embed (OPENCODE_EMBED_PTY != 1)"
+# OpenCode's terminal feature runs on bun-pty, whose npm prebuilt is
+# glibc-linked (libpthread.so.0) and cannot dlopen on Bionic. Overwrite the
+# npm artifact with the Bionic build published by bun-termux so the compiled
+# binary embeds a working library: bun-pty picks up its .so via a statically
+# analyzed require(), so whatever sits on disk here is what gets baked in.
+BUN_PTY_VERSION="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['bunPty']['version'])")"
+BUN_PTY_URL="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['bunPty']['assetUrl'])")"
+BUN_PTY_DIR="$(find "$BUILD_ROOT" -type d -path '*bun-pty/rust-pty/target/release' 2>/dev/null | head -1 || true)"
+if [ -z "$BUN_PTY_DIR" ]; then
+  echo "error: bun-pty package not found under node_modules — cannot embed Bionic pty" >&2
+  exit 1
 fi
+echo "→ embedding Bionic bun-pty $BUN_PTY_VERSION (npm prebuilt is glibc-only)"
+curl -fsSL -o "$BUN_PTY_DIR/librust_pty_arm64.so" "$BUN_PTY_URL"
+if ! file -b "$BUN_PTY_DIR/librust_pty_arm64.so" | grep -q "ARM aarch64"; then
+  echo "error: bun-pty Bionic .so is not an aarch64 shared object" >&2
+  exit 1
+fi
+echo "→ bun-pty Bionic embedded: $BUN_PTY_DIR/librust_pty_arm64.so"
 
 cd -
 
