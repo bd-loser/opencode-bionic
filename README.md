@@ -54,6 +54,45 @@ directly instead of installing: [all releases](https://github.com/bd-loser/openc
 automated: new upstream moves are detected and mirrored without a human
 pressing anything, usually within minutes.
 
+## Why this build vs the alternatives
+
+Nothing here is magic powder — [Hope2333/opencode-termux](https://github.com/Hope2333/opencode-termux)
+and [guysoft/opencode-termux](https://github.com/guysoft/opencode-termux) both
+ship fine native-Bionic OpenCode too. Respect to both; pick whatever fits you.
+Where this repo differs:
+
+| | **opencode-bionic** | Hope2333/opencode-termux | guysoft/opencode-termux |
+|---|---|---|---|
+| libc | native Bionic | native Bionic | native Bionic |
+| Channels | stable + beta + dev, synced automatically | v1 + v2 lines | v1 + side-by-side v2 pre-release |
+| Freshness | dev/beta rebuilt within minutes of upstream commits, no human in the loop | — | — |
+| Terminal sessions (PTY) | yes — `bun-pty` is rebuilt for Bionic and embedded | — | — |
+| TUI renderer | `@androidtui/*`: opentui's Zig `.so` rebuilt for Android, 16 KiB page-aligned | full TUI | full TUI |
+| Result | one self-contained binary — no glibc payload, no runtime downloads | 5 package families, pick per generation | wrapper + `.bin` + `.so` bundle |
+| Integrity | every `.deb` SHA256-verified at install; installable by exact version *or upstream commit* | — | — |
+| Provenance | patch kit + version pins in-repo; builds run in CI containers you can inspect | — | source build |
+
+"—" means "not documented by that project" — check their README for details
+before trusting any comparison.
+
+The one-command story:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
+```
+
+- **No root, no proot, no chroot, no VM** — dies if it would need those.
+- **No surprise prereleases**: `/releases/latest` is stable-only; beta and dev
+  are opt-in via `OPENCODE_CHANNEL=`.
+- **Reproducible pulls**: `OPENCODE_VERSION=` / `OPENCODE_COMMIT=` pin any
+  release, even a moving-channel one.
+
+## Roadmap
+
+- [ ] `.deb` package repository (would enable `pkg upgrade opencode`)
+- [ ] Screenshots of the TUI in action
+- [ ] `opencode-upgrade` helper for in-place channel switching
+
 ## What is opencode?
 
 An open-source, terminal-based AI coding agent — MIT-licensed and
