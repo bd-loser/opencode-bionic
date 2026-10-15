@@ -11,5 +11,9 @@
   "bunTermux": {
     "version": "1.4.3-patched",
     "installUrl": "https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh"
+  },
+  "bunPty": {
+    "version": "0.4.11",
+    "assetUrl": "https://github.com/bd-loser/bun-termux/releases/download/bun-pty-v0.4.11/librust_pty_arm64_bionic.so"
   }
 }
