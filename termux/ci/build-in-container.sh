@@ -51,7 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg cargo
+apt install -y git python curl dpkg
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
@@ -87,10 +87,11 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
-# Build @opencode-ai/pty from source for Bionic. The prebuilt glibc binary
-# won't load on Android; building from source in the container produces a
-# compatible binary. Requires Rust + Zig (fetched by opencode-pty's build.rs).
-if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
+# The 1.x build can stub the optional native pty binding when absent. Only
+# install Rust/Zig and build it when explicitly requested.
+if [ "${OPENCODE_EMBED_PTY:-0}" = "1" ]; then
+  apt install -y rust zig
+  if [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
   echo "→ building @opencode-ai/pty from source for Bionic"
   PTY_SRC="$HOME/opencode-pty-src"
   rm -rf "$PTY_SRC"
@@ -124,6 +125,9 @@ if [ ! -d "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu" ] || [ ! -
 PKGJSON
   cd "$BUILD_ROOT"
   echo "→ pty installed: $PTY_PKG/bin/opencode-pty ($(du -h "$PTY_PKG/bin/opencode-pty" | cut -f1))"
+  fi
+else
+  echo "→ skipping native pty embed (OPENCODE_EMBED_PTY != 1)"
 fi
 
 cd -

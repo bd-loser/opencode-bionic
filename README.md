@@ -96,7 +96,7 @@ release. Other channels live on their own branch
 | opencode (upstream) | `1.19.1` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
-| `bun-termux` runtime | `1.4.2-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
+| `bun-termux` runtime | `1.4.3-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
 <!-- /versions:table -->
 
 ## FAQ
