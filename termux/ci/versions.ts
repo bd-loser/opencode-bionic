@@ -31,6 +31,7 @@ type Versions = {
     androidArm64Native: string
   }
   bunTermux: { version: string; installUrl: string }
+  bunPty: { version: string; assetUrl: string }
 }
 
 const versions: Versions = JSON.parse(readFileSync(VERSIONS_FILE, "utf8"))
@@ -343,6 +344,10 @@ async function main() {
     console.log(`OPENTUI_NATIVE_ANDROID_ARM64=${versions.opentui.androidArm64Native}`)
     console.log(`BUN_TERMUX_VERSION=${versions.bunTermux.version}`)
     console.log(`BUN_TERMUX_INSTALL_URL=${versions.bunTermux.installUrl}`)
+    if (versions.bunPty) {
+      console.log(`BUN_PTY_VERSION=${versions.bunPty.version}`)
+      console.log(`BUN_PTY_ASSET_URL=${versions.bunPty.assetUrl}`)
+    }
     return
   }
 

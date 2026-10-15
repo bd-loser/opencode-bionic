@@ -87,6 +87,39 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
+# Terminal sessions ride on bun-pty, whose npm prebuilt is glibc-linked
+# (libpthread.so.0) and cannot dlopen on Bionic. Overwrite the npm artifact
+# with the Bionic build published by bun-termux, matched to the bun-pty
+# version upstream pins: bun-pty picks its .so via a statically analyzed
+# require(), so this on-disk file is what the compiled binary embeds.
+BUN_PTY_VERSION="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['bunPty']['version'])")"
+BUN_PTY_URL="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['bunPty']['assetUrl'])")"
+BUN_PTY_DIR="$(find "$BUILD_ROOT" -type d -path '*bun-pty/rust-pty/target/release' 2>/dev/null | head -1 || true)"
+if [ -z "$BUN_PTY_DIR" ]; then
+  echo "error: bun-pty package not found under node_modules — cannot embed Bionic pty" >&2
+  exit 1
+fi
+echo "→ embedding Bionic bun-pty $BUN_PTY_VERSION (npm prebuilt is glibc-only)"
+curl -fsSL -o "$BUN_PTY_DIR/librust_pty_arm64.so" "$BUN_PTY_URL"
+# The container ships no usable `file`/`readelf`; verify the ELF with python.
+if ! python3 - "$BUN_PTY_DIR/librust_pty_arm64.so" <<'PYELF'
+import struct, sys
+h = open(sys.argv[1], "rb").read(20)
+assert h[:4] == b"\x7fELF", "not an ELF"
+assert h[4] == 2, "not 64-bit"
+assert h[5] == 1, "not little-endian"
+machine = struct.unpack_from("<H", h, 18)[0]
+assert machine == 183, f"not AArch64 (e_machine={machine})"
+PYELF
+then
+  echo "error: bun-pty Bionic .so is not an aarch64 ELF" >&2
+  exit 1
+fi
+echo "→ bun-pty Bionic embedded: $BUN_PTY_DIR/librust_pty_arm64.so"
+
+
 # Embed the native pty service, or skip it like the 1.x builds did.
 #
 # 1.x's build-termux.ts never embedded a pty binary at all — opencode's own
