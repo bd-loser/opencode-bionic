@@ -14,6 +14,18 @@
 [![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
 <!-- /versions:badges -->
 
+## Screenshots
+
+Native TUI, rendered on-device by Termux — no proot, no VNC, no WebView:
+
+<p align="center">
+  <img src="docs/assets/tui-welcome.png" width="49%" alt="opencode welcome page in Termux on Android">
+  <img src="docs/assets/tui-models.png" width="49%" alt="opencode model picker in Termux, including free models">
+</p>
+
+Free models are in the picker too, so you can start coding without paying for
+anything.
+
 ## Install
 
 One command, inside [Termux](https://termux.dev) (F-Droid or GitHub — not
@@ -25,6 +37,22 @@ curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/insta
 
 Grabs the latest **stable** `.deb`, verifies its SHA256, installs with
 `dpkg`. Then just run `opencode`.
+
+### Or via `pkg` (signed apt repository, gets you `pkg upgrade opencode`)
+
+```bash
+curl -fsSL https://bd-loser.github.io/opencode-bionic/opencode-bionic.gpg \
+  -o $PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg
+echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main" \
+  > $PREFIX/etc/apt/sources.list.d/opencode-bionic.list
+pkg update && pkg install opencode
+```
+
+Every stable release (back to 1.18.x) plus recent beta/dev builds is in the
+index, so version pinning works here too: `pkg install opencode=1.19.0`.
+Swap `stable` for `beta` or `dev` in the `deb` line to follow another line —
+pick one suite only, the package name is `opencode` in all of them. The index
+is regenerated and re-signed automatically after every release.
 
 ### Channels
 
@@ -53,6 +81,24 @@ directly instead of installing: [all releases](https://github.com/bd-loser/openc
 · [tags](https://github.com/bd-loser/opencode-bionic/tags). Everything is
 automated: new upstream moves are detected and mirrored without a human
 pressing anything, usually within minutes.
+
+## How it compares
+
+[Hope2333/opencode-termux](https://github.com/Hope2333/opencode-termux) and
+[guysoft/opencode-termux](https://github.com/guysoft/opencode-termux) also ship
+native-Bionic OpenCode and both have bigger communities than this repo. What
+is different here:
+
+| | opencode-bionic | Hope2333/opencode-termux | guysoft/opencode-termux |
+|---|---|---|---|
+| libc | native Bionic | native Bionic | native Bionic |
+| release lines | stable + beta + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
+| dev freshness | tracks upstream commits within minutes | — | — |
+| terminal sessions (PTY) | works, bun-pty rebuilt for Bionic | — | — |
+| what you install | one self-contained .deb | one of five package families | package + wrapper + libs |
+| exact pinning | by version or upstream commit | — | — |
+
+Blank cells: not verified, read their README.
 
 ## What is opencode?
 
