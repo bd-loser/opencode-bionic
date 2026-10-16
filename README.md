@@ -40,6 +40,17 @@ Grabs the latest **stable** `.deb`, verifies its SHA256, installs with
 
 ### Or via `pkg` (signed apt repository, gets you `pkg upgrade opencode`)
 
+Setup in one command — this adds the repository, installs opencode, and
+every later `pkg upgrade opencode` pulls the newest build. Select a channel
+with `OPENCODE_CHANNEL=beta` or `dev` before the pipe (default: stable):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | bash
+```
+
+The script only automates the two commands below — run those instead if you
+prefer not to pipe anything:
+
 ```bash
 curl -fsSL https://bd-loser.github.io/opencode-bionic/opencode-bionic.gpg \
   -o $PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg
@@ -56,7 +67,7 @@ is regenerated and re-signed automatically after every release.
 
 ### Channels
 
-Upstream ships three release lines; we mirror all of them, within minutes:
+Upstream ships three release lines; we mirror all of them, automatically:
 
 | Channel | Built from | Our tag pattern | Env |
 |---|---|---|---|
@@ -79,8 +90,8 @@ prereleases and can never reach you unless you ask. Browse the artifacts
 directly instead of installing: [all releases](https://github.com/bd-loser/opencode-bionic/releases)
 · [beta & dev](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true)
 · [tags](https://github.com/bd-loser/opencode-bionic/tags). Everything is
-automated: new upstream moves are detected and mirrored without a human
-pressing anything, usually within minutes.
+automated: an hourly watcher detects new upstream moves and mirrors each
+one, so a fresh dev build lands at most about an hour behind upstream.
 
 ## How it compares
 
@@ -93,7 +104,7 @@ is different here:
 |---|---|---|---|
 | libc | native Bionic | native Bionic | native Bionic |
 | release lines | stable + beta + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
-| dev freshness | tracks upstream commits within minutes | — | — |
+| dev freshness | tracks upstream commits hourly | — | — |
 | terminal sessions (PTY) | works, bun-pty rebuilt for Bionic | — | — |
 | what you install | one self-contained .deb | one of five package families | package + wrapper + libs |
 | exact pinning | by version or upstream commit | — | — |
@@ -143,6 +154,8 @@ release. Other channels live on their own branch
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
 | `bun-termux` runtime | `1.4.3-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
+| `bun-pty` (Bionic pty `.so`, embedded) | `0.4.8` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.8)) |
+
 <!-- /versions:table -->
 
 ## FAQ
@@ -152,7 +165,7 @@ release. Other channels live on their own branch
 
 No root, no proot, no chroot. Only aarch64 (arm64-v8a) is built, which
 covers essentially every Android device from the last ~7 years. Minimum
-Android version: whatever Termux itself supports (7.0+).
+Android version: 10 — the patched Bun runtime needs API 29.
 </details>
 
 <details>
@@ -175,8 +188,8 @@ see [opencode.ai/docs](https://opencode.ai/docs).
 <details>
 <summary><b>How fast do updates land?</b></summary>
 
-Automatically, within minutes — upstream stable, beta, and dev activity
-each trigger a matching build and release here. Version parity is a
+Automatically — upstream stable, beta, and dev activity each trigger a
+matching build and release here within the hour. Version parity is a
 design goal, not a task. See [Channels](#channels).
 </details>
 
