@@ -15,8 +15,8 @@
 Native TUI, rendered on-device — no proot, no VNC, no WebView:
 
 <p align="center">
-  <img src="docs/assets/tui-welcome.png" width="49%" alt="opencode welcome page in Termux on Android">
-  <img src="docs/assets/tui-models.png" width="49%" alt="opencode model picker in Termux, including free models">
+  <img src="https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/docs/assets/tui-welcome.png" width="49%" alt="opencode welcome page in Termux on Android">
+  <img src="https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/docs/assets/tui-models.png" width="49%" alt="opencode model picker in Termux, including free models">
 </p>
 
 Free models are in the picker too — you can start coding without paying for
