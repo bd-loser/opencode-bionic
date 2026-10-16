@@ -8,7 +8,9 @@ on:
     - cron: "23 2 * * 1"
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
 
 concurrency:
   group: termux-repo
@@ -17,6 +19,9 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Install apt repo tooling
         run: |
@@ -53,7 +58,7 @@ jobs:
           dl "$DEV_TAG" dev
           find pool -type f | sort
 
-      - name: Build signed apt tree
+      - name: Build signed apt tree + channel index
         run: |
           set -euo pipefail
           rm -rf repo && mkdir -p repo
@@ -78,22 +83,70 @@ jobs:
             gpg --batch --yes --clearsign --output "$D/InRelease" "$D/Release"
             gpg --batch --yes --armor --detach-sign --output "$D/Release.gpg" "$D/Release"
           done
+          python3 - <<'PY'
+          import email.utils, glob, html, os, time
+
+          REPO = os.environ["GITHUB_REPOSITORY"]
+          CHS = [("stable", "Default line. Mirrors upstream release tags."),
+                 ("beta", "Upstream's beta branch, first build per version."),
+                 ("dev", "Upstream's dev branch, first build per version.")]
+          rows = []
+          for ch, blurb in CHS:
+              debs = glob.glob(f"pool/{ch}/*.deb")
+              if not debs:
+                  continue
+              name = os.path.basename(debs[0])
+              ver = name.split("_")[1]
+              tag = "v" + ver
+              rows.append((ch, ver, tag, blurb))
+          now = email.utils.format_datetime(time.gmtime(), usegmt=True)
+          cards = []
+          for ch, ver, tag, blurb in rows:
+              base = f"https://raw.githubusercontent.com/{REPO}/main/repo-setup.sh"
+              setup = f"curl -fsSL {base} | bash" if ch == "stable" else \
+                      f"curl -fsSL {base} | OPENCODE_CHANNEL={ch} bash"
+              cards.append(f"""
+<div class="card">
+  <div class="head"><span class="ch {ch}">{ch}</span><span class="ver">opencode {html.escape(ver)}</span></div>
+  <p>{html.escape(blurb)}</p>
+  <pre><code>{html.escape(setup)}</code></pre>
+  <p class="alt">apt line: <code>deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic {ch} main</code>
+   · <a href="https://github.com/{REPO}/releases/tag/{tag}">release {html.escape(tag)}</a></p>
+</div>""")
+          page = f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>opencode for Termux — package repository</title>
+<style>
+body{{background:#0d1117;color:#d8dee6;font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:2rem 1rem;line-height:1.5}}
+a{{color:#6ea8fe}} code{{background:#161b22;border:1px solid #2b3240;border-radius:6px;padding:.1rem .35rem;font-size:.85em;word-break:break-all}}
+pre code{{display:block;padding:.8rem;overflow-x:auto}}
+.card{{border:1px solid #2b3240;border-radius:12px;padding:1rem 1.2rem;margin:1rem 0;background:#0f141b}}
+.head{{display:flex;gap:.7rem;align-items:center;margin-bottom:.3rem}}
+.ch{{font-weight:700;padding:.15rem .6rem;border-radius:99px;font-size:.8rem}}
+.stable{{background:#1a3d2a;color:#5ad19c}}.beta{{background:#41351a;color:#e6c05a}}.dev{{background:#152a44;color:#6ea8fe}}
+.ver{{font-weight:600}} p{{margin:.4rem 0}} .alt{{color:#9aa4b2;font-size:.85rem}} .alt code{{font-size:.95em}}
+footer{{margin-top:2rem;color:#8a94a3;font-size:.85rem}}
+</style></head><body>
+<h1>opencode for Termux</h1>
+<p>Signed apt repository for <a href="https://github.com/{REPO}">{REPO}</a> —
+native Bionic builds of <a href="https://opencode.ai">opencode</a>.
+Add a channel, then <code>pkg upgrade opencode</code> keeps it current.</p>
+{''.join(cards)}
+<footer>Regenerated and re-signed automatically after every release · {html.escape(now)} UTC<br>
+Key: <a href="opencode-bionic.gpg">opencode-bionic.gpg</a> · <a href="opencode-bionic.asc">.asc</a>
+· Full docs in the <a href="https://github.com/{REPO}#readme">repo README</a></footer>
+</body></html>"""
+          open("repo/index.html", "w").write(page)
+          print(f"index.html: {len(rows)} channel card(s)")
+          PY
           find repo -type f | sort
 
-      - name: Publish to gh-pages
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          rm -rf publish
-          if git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages | grep -q .; then
-            git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" publish
-          else
-            git init -b gh-pages publish
-            git -C publish remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          fi
-          rsync -a --delete --exclude .git repo/ publish/
-          git -C publish add -A
-          git -C publish -c user.name="termux-repo bot" -c user.email="noreply@github.com" \
-            commit -m "apt repo sync $(date -u +%FT%TZ)" || echo "nothing changed"
-          git -C publish push -u origin gh-pages
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: repo
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
