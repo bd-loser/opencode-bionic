@@ -100,12 +100,6 @@ is different here:
 
 Blank cells: not verified, read their README.
 
-## Roadmap
-
-- .deb repository, so `pkg upgrade opencode` works
-- TUI screenshots
-- an `opencode-upgrade` helper, for switching channels without the curl line
-
 ## What is opencode?
 
 An open-source, terminal-based AI coding agent — MIT-licensed and
