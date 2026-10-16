@@ -48,11 +48,11 @@ echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main"
 pkg update && pkg install opencode
 ```
 
-The repository always serves the newest build of each channel. Swap `stable`
-for `beta` or `dev` in the `deb` line to follow another line — pick one suite
-only, the package name is `opencode` in all of them. The index is
-regenerated and re-signed automatically after every release; prefer pinning?
-That is what the `install.sh` above is for.
+Every stable release (back to 1.18.x) plus recent beta/dev builds is in the
+index, so version pinning works here too: `pkg install opencode=1.19.0`.
+Swap `stable` for `beta` or `dev` in the `deb` line to follow another line —
+pick one suite only, the package name is `opencode` in all of them. The index
+is regenerated and re-signed automatically after every release.
 
 ### Channels
 
