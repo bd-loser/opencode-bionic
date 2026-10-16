@@ -66,6 +66,11 @@ automatically after every release. Swap `stable` for `beta` or `dev` in the
 `opencode` in all of them. For older versions, use the `install.sh` route
 with `OPENCODE_VERSION=<version>` instead.
 
+The repository doubles as a status page —
+[bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/)
+shows the current stable, beta, and dev builds side by side, each with its
+own install command. It is regenerated and re-signed after every release.
+
 ### Channels
 
 Upstream ships three release lines; we mirror all of them, automatically:
@@ -90,7 +95,8 @@ curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/insta
 prereleases and can never reach you unless you ask. Browse the artifacts
 directly instead of installing: [all releases](https://github.com/bd-loser/opencode-bionic/releases)
 · [beta & dev](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true)
-· [tags](https://github.com/bd-loser/opencode-bionic/tags). Everything is
+· [tags](https://github.com/bd-loser/opencode-bionic/tags) · the
+[live package index](https://bd-loser.github.io/opencode-bionic/). Everything is
 automated: an hourly watcher detects new upstream moves and mirrors each
 one, so a fresh dev build lands at most about an hour behind upstream.
 
