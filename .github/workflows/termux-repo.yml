@@ -46,7 +46,7 @@ jobs:
           echo "stable=$STABLE_TAG beta=$BETA_TAG dev=$DEV_TAG"
           dl() {
             if [ -z "$1" ] || [ "$1" = "null" ]; then echo "skip $2: no release found"; return 0; fi
-            gh release download "$1" -R "$REPO" -p '*.deb' -O "pool/$2/" --clobber
+            gh release download "$1" -R "$REPO" -p '*.deb' -D "pool/$2/" --clobber
           }
           dl "$STABLE_TAG" stable
           dl "$BETA_TAG" beta
