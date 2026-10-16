@@ -264,7 +264,10 @@ function applyReadme(): boolean {
     `| opencode (upstream) | \`${versions.opencode}\` |\n` +
     `| \`@opentui/{core,keymap,solid}\` (JS, via \`@androidtui\`) | \`${versions.opentui.core}\` |\n` +
     `| \`@androidtui/core-android-arm64\` (native \`.so\`) | \`${versions.opentui.androidArm64Native}\` |\n` +
-    `| \`bun-termux\` runtime | \`${versions.bunTermux.version}\` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |`
+    `| \`bun-termux\` runtime | \`${versions.bunTermux.version}\` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |\n` +
+    (versions.bunPty
+      ? `| \`bun-pty\` (Bionic pty \`.so\`, embedded) | \`${versions.bunPty.version}\` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v${versions.bunPty.version})) |\n`
+      : "")
   let out = orig.replace(
     /<!-- versions:badges -->[\s\S]*?<!-- \/versions:badges -->/,
     `<!-- versions:badges -->\n${badges}\n<!-- /versions:badges -->`,
