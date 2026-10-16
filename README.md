@@ -14,6 +14,18 @@
 [![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.6.6-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
 <!-- /versions:badges -->
 
+## Screenshots
+
+Native TUI, rendered on-device by Termux — no proot, no VNC, no WebView:
+
+<p align="center">
+  <img src="docs/assets/tui-welcome.png" width="49%" alt="opencode welcome page in Termux on Android">
+  <img src="docs/assets/tui-models.png" width="49%" alt="opencode model picker in Termux, including free models">
+</p>
+
+Free models are in the picker too, so you can start coding without paying for
+anything.
+
 ## Install
 
 One command, inside [Termux](https://termux.dev) (F-Droid or GitHub — not
@@ -71,12 +83,6 @@ is different here:
 | exact pinning | by version or upstream commit | — | — |
 
 Blank cells: not verified, read their README.
-
-## Roadmap
-
-- .deb repository, so `pkg upgrade opencode` works
-- TUI screenshots
-- an `opencode-upgrade` helper, for switching channels without the curl line
 
 ## What is opencode?
 
