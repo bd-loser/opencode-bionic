@@ -31,111 +31,40 @@ jobs:
           printf '%s\n' "$APT_KEY" | gpg --batch --import
           gpg --list-secret-keys
 
-      - name: Select versions per channel
+      - name: Stage release pool (latest per channel)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           REPO="$GITHUB_REPOSITORY"
+          rm -rf pool && mkdir -p pool/stable pool/beta pool/dev
           gh api "repos/$REPO/releases?per_page=100" --paginate > releases.json
-          python3 - <<'PY'
-          import json, re
-
-          raw = open("releases.json").read()
-          dec = json.JSONDecoder()
-          rel, i = [], 0
-          while i < len(raw):
-              while i < len(raw) and raw[i] in " \n\r\t":
-                  i += 1
-              if i >= len(raw):
-                  break
-              obj, i = dec.raw_decode(raw, i)
-              rel += obj
-          seen = {}
-          for r in rel:
-              seen.setdefault(r["tag_name"], r)
-
-          caps = {"stable": 100, "beta": 10, "dev": 8}
-          recs = sorted(seen.values(), key=lambda r: r.get("created_at", ""), reverse=True)
-          rows = []
-          for suite, cap in caps.items():
-              count = 0
-              for r in recs:
-                  if count >= cap:
-                      break
-                  t = r["tag_name"]
-                  if r["draft"] or (r["prerelease"] != (suite != "stable")):
-                      continue
-                  if suite == "stable" and not re.match(r"^v\d+\.\d+\.\d+$", t):
-                      continue
-                  if suite == "beta" and "-beta." not in t:
-                      continue
-                  if suite == "dev" and "-dev." not in t:
-                      continue
-                  debs = [a for a in r["assets"] if a["name"].endswith(".deb")]
-                  if not debs:
-                      continue
-                  asset = debs[0]
-                  digest = asset.get("digest", "")
-                  if not digest.startswith("sha256:"):
-                      continue
-                  rows.append((suite, t, asset["name"], asset["size"], digest.split(":", 1)[1]))
-                  count += 1
-          with open("selection.tsv", "w") as f:
-              for suite, tag, name, size, sha in rows:
-                  f.write(f"{suite}\t{tag}\t{name}\t{size}\t{sha}\n")
-          print(f"{len(rows)} package entries")
-          for suite, tag, *_ in rows[:12]:
-              print(f"  {suite:6} {tag}")
-          print("  ...")
-          PY
+          latest() { jq -r "$1" releases.json | head -1; }
+          STABLE_TAG="$(latest '[.[] | select(.draft==false and .prerelease==false and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].tag_name')"
+          BETA_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-beta.")))] | .[0].tag_name')"
+          DEV_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-dev.")))] | .[0].tag_name')"
+          echo "stable=$STABLE_TAG beta=$BETA_TAG dev=$DEV_TAG"
+          dl() {
+            if [ -z "$1" ] || [ "$1" = "null" ]; then echo "skip $2: no release found"; return 0; fi
+            gh release download "$1" -R "$REPO" -p '*.deb' -D "pool/$2/" --clobber
+          }
+          dl "$STABLE_TAG" stable
+          dl "$BETA_TAG" beta
+          dl "$DEV_TAG" dev
+          find pool -type f | sort
 
       - name: Build signed apt tree
         run: |
           set -euo pipefail
           rm -rf repo && mkdir -p repo
+          cp -r pool repo/pool
           gpg --armor --export > repo/opencode-bionic.asc
           gpg --armor --export | gpg --dearmor > repo/opencode-bionic.gpg
-          python3 - "repo" <<'PY'
-          import os, sys
-
-          REPO = os.environ["GITHUB_REPOSITORY"]
-          root = sys.argv[1]
-          suites = {}
-          for line in open("selection.tsv"):
-              suite, tag, name, size, sha = line.strip().split("\t")
-              suites.setdefault(suite, []).append((tag, name, int(size), sha))
-          for suite, entries in suites.items():
-              d = os.path.join(root, "dists", suite, "main", "binary-aarch64")
-              os.makedirs(d, exist_ok=True)
-              entries = sorted(entries, key=lambda e: e[0], reverse=True)
-              seen = set()
-              with open(os.path.join(d, "Packages"), "w") as f:
-                  for tag, name, size, sha in entries:
-                      ver = tag[1:]
-                      if (suite, ver) in seen:
-                          continue
-                      seen.add((suite, ver))
-                      f.write(
-                          "Package: opencode\n"
-                          f"Version: {ver}\n"
-                          "Architecture: aarch64\n"
-                          "Maintainer: bd-loser <bd-loser@users.noreply.github.com>\n"
-                          "Section: utils\n"
-                          "Priority: optional\n"
-                          f"Homepage: https://github.com/{REPO}\n"
-                          "Description: OpenCode AI coding agent for Termux (Bionic aarch64)\n"
-                          f" Native build, {suite} channel release {ver}.\n"
-                          f"Filename: https://github.com/{REPO}/releases/download/{tag}/{name}\n"
-                          f"Size: {size}\n"
-                          f"SHA256: {sha}\n"
-                          "\n"
-                      )
-              print(f"{suite}: {len(seen)} version(s)")
-          PY
           for ch in stable beta dev; do
             D=repo/dists/$ch
-            if [ ! -f "$D/main/binary-aarch64/Packages" ]; then echo "channel $ch: no packages, skipping suite"; continue; fi
+            if [ -z "$(ls -A pool/$ch 2>/dev/null)" ]; then echo "channel $ch: no packages, skipping suite"; continue; fi
+            mkdir -p "$D/main/binary-aarch64"
+            apt-ftparchive packages "pool/$ch" > "$D/main/binary-aarch64/Packages"
             gzip -k -9 "$D/main/binary-aarch64/Packages"
             apt-ftparchive \
               -o "APT::FTPArchive::Release::Origin=opencode-bionic" \
