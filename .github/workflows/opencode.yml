@@ -240,6 +240,7 @@ jobs:
     if: needs.detect.outputs.count != '0'
     runs-on: ubuntu-24.04-arm
     permissions:
+      actions: write
       contents: write
     timeout-minutes: 45
     strategy:
@@ -387,6 +388,15 @@ jobs:
             dist/opencode_${RELEASE}_aarch64.deb \
             dist/opencode \
             dist/SHA256SUMS
+
+      - name: Chain package-repo sync
+        if: ${{ matrix.leg.draft != true && github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          gh workflow run termux-repo.yml --ref main
+          echo "dispatched termux-repo.yml (apt repo + pages channel index)"
 
       - name: Update rolling pin after build
         if: ${{ matrix.leg.channel != 'stable' && github.event.inputs.dry_run != 'true' }}
