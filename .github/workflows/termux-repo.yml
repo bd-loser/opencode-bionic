@@ -84,7 +84,7 @@ jobs:
             gpg --batch --yes --armor --detach-sign --output "$D/Release.gpg" "$D/Release"
           done
           python3 - <<'PY'
-          import email.utils, glob, html, os, time
+          import glob, html, os, time
           REPO = os.environ["GITHUB_REPOSITORY"]
           SUITES = [
               ("stable", "Default line. Mirrors upstream release tags."),
@@ -98,7 +98,7 @@ jobs:
                   continue
               ver = os.path.basename(debs[0]).split("_")[1]
               rows.append((ch, ver))
-          now = email.utils.format_datetime(time.gmtime(), usegmt=True)
+          now = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
           base_url = "https://bd-loser.github.io/opencode-bionic"
           setup_base = "https://raw.githubusercontent.com/%s/main/repo-setup.sh" % REPO
           cards = []
