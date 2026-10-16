@@ -38,6 +38,22 @@ curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/insta
 Grabs the latest **stable** `.deb`, verifies its SHA256, installs with
 `dpkg`. Then just run `opencode`.
 
+### Or via `pkg` (signed apt repository, gets you `pkg upgrade opencode`)
+
+```bash
+curl -fsSL https://bd-loser.github.io/opencode-bionic/opencode-bionic.gpg \
+  -o $PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg
+echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main" \
+  > $PREFIX/etc/apt/sources.list.d/opencode-bionic.list
+pkg update && pkg install opencode
+```
+
+The repository always serves the newest build of each channel. Swap `stable`
+for `beta` or `dev` in the `deb` line to follow another line — pick one suite
+only, the package name is `opencode` in all of them. The index is
+regenerated and re-signed automatically after every release; prefer pinning?
+That is what the `install.sh` above is for.
+
 ### Channels
 
 Upstream ships three release lines; we mirror all of them, within minutes:
