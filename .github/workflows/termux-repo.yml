@@ -1,0 +1,99 @@
+name: termux-repo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 2 * * 1"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: termux-repo
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Install apt repo tooling
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq apt-utils gnupg
+
+      - name: Import signing key
+        env:
+          APT_KEY: ${{ secrets.APT_GPG_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "$APT_KEY" | gpg --batch --import
+          gpg --list-secret-keys
+
+      - name: Stage release pool (latest per channel)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          rm -rf pool && mkdir -p pool/stable pool/beta pool/dev
+          gh api "repos/$REPO/releases?per_page=100" --paginate > releases.json
+          latest() { jq -c "$1" releases.json | head -1; }
+          STABLE_TAG="$(latest '[.[] | select(.draft==false and .prerelease==false and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].tag_name')"
+          BETA_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-beta.")))] | .[0].tag_name')"
+          DEV_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-dev.")))] | .[0].tag_name')"
+          echo "stable=$STABLE_TAG beta=$BETA_TAG dev=$DEV_TAG"
+          dl() {
+            if [ -z "$1" ] || [ "$1" = "null" ]; then echo "skip $2: no release found"; return 0; fi
+            gh release download "$1" -R "$REPO" -p '*.deb' -O "pool/$2/" --clobber
+          }
+          dl "$STABLE_TAG" stable
+          dl "$BETA_TAG" beta
+          dl "$DEV_TAG" dev
+          find pool -type f | sort
+
+      - name: Build signed apt tree
+        run: |
+          set -euo pipefail
+          rm -rf repo && mkdir -p repo
+          cp -r pool repo/pool
+          gpg --armor --export > repo/opencode-bionic.asc
+          gpg --armor --export | gpg --dearmor > repo/opencode-bionic.gpg
+          for ch in stable beta dev; do
+            D=repo/dists/$ch
+            if [ -z "$(ls -A pool/$ch 2>/dev/null)" ]; then echo "channel $ch: no packages, skipping suite"; continue; fi
+            mkdir -p "$D/main/binary-aarch64"
+            apt-ftparchive packages "pool/$ch" > "$D/main/binary-aarch64/Packages"
+            gzip -k -9 "$D/main/binary-aarch64/Packages"
+            apt-ftparchive \
+              -o "APT::FTPArchive::Release::Origin=opencode-bionic" \
+              -o "APT::FTPArchive::Release::Label=opencode-bionic" \
+              -o "APT::FTPArchive::Release::Suite=$ch" \
+              -o "APT::FTPArchive::Release::Codename=$ch" \
+              -o "APT::FTPArchive::Release::Architectures=aarch64" \
+              -o "APT::FTPArchive::Release::Components=main" \
+              -o "APT::FTPArchive::Release::Description=OpenCode for Termux (Bionic aarch64), channel $ch" \
+              release "$D" > "$D/Release"
+            gpg --batch --yes --clearsign --output "$D/InRelease" "$D/Release"
+            gpg --batch --yes --armor --detach-sign --output "$D/Release.gpg" "$D/Release"
+          done
+          find repo -type f | sort
+
+      - name: Publish to gh-pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf publish
+          if git ls-remote --heads "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" gh-pages | grep -q .; then
+            git clone --depth 1 --branch gh-pages "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" publish
+          else
+            git init -b gh-pages publish
+            git -C publish remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          fi
+          rsync -a --delete --exclude .git repo/ publish/
+          git -C publish add -A
+          git -C publish -c user.name="termux-repo bot" -c user.email="noreply@github.com" \
+            commit -m "apt repo sync $(date -u +%FT%TZ)" || echo "nothing changed"
+          git -C publish push -u origin gh-pages
