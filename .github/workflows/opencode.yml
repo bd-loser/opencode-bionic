@@ -205,6 +205,14 @@ jobs:
               if gh release view "$tag" --repo "$OURS" >/dev/null 2>&1; then
                 echo "$line: $tag already released"; continue
               fi
+              # One build per upstream version: if any release for this
+              # version already exists on this line, later commits carrying
+              # the same package version are skipped until upstream bumps.
+              shipped="$(gh api "repos/$OURS/releases?per_page=100" --paginate \
+                --jq "[.[]|select((.tag_name|startswith(\"v${ver}-${line}.\")) and (.draft|not))][0].tag_name // empty" | head -1 || true)"
+              if [ -n "$shipped" ]; then
+                echo "$line: $ver already shipping as $shipped — skipping until upstream bumps"; continue
+              fi
               if [ -n "$(head_is_release "$sha")" ]; then
                 echo "$line head is a release tag — stable path covers it"; continue
               fi
