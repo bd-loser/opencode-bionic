@@ -39,7 +39,7 @@ jobs:
           REPO="$GITHUB_REPOSITORY"
           rm -rf pool && mkdir -p pool/stable pool/beta pool/dev
           gh api "repos/$REPO/releases?per_page=100" --paginate > releases.json
-          latest() { jq -c "$1" releases.json | head -1; }
+          latest() { jq -r "$1" releases.json | head -1; }
           STABLE_TAG="$(latest '[.[] | select(.draft==false and .prerelease==false and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].tag_name')"
           BETA_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-beta.")))] | .[0].tag_name')"
           DEV_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-dev.")))] | .[0].tag_name')"
