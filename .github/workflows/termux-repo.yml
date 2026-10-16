@@ -85,60 +85,72 @@ jobs:
           done
           python3 - <<'PY'
           import email.utils, glob, html, os, time
-
           REPO = os.environ["GITHUB_REPOSITORY"]
-          CHS = [("stable", "Default line. Mirrors upstream release tags."),
-                 ("beta", "Upstream's beta branch, first build per version."),
-                 ("dev", "Upstream's dev branch, first build per version.")]
+          SUITES = [
+              ("stable", "Default line. Mirrors upstream release tags."),
+              ("beta", "Upstream beta branch, first build per version."),
+              ("dev", "Upstream dev branch, first build per version."),
+          ]
           rows = []
-          for ch, blurb in CHS:
-              debs = glob.glob(f"pool/{ch}/*.deb")
+          for ch, blurb in SUITES:
+              debs = glob.glob("pool/%s/*.deb" % ch)
               if not debs:
                   continue
-              name = os.path.basename(debs[0])
-              ver = name.split("_")[1]
-              tag = "v" + ver
-              rows.append((ch, ver, tag, blurb))
+              ver = os.path.basename(debs[0]).split("_")[1]
+              rows.append((ch, ver))
           now = email.utils.format_datetime(time.gmtime(), usegmt=True)
+          base_url = "https://bd-loser.github.io/opencode-bionic"
+          setup_base = "https://raw.githubusercontent.com/%s/main/repo-setup.sh" % REPO
           cards = []
-          for ch, ver, tag, blurb in rows:
-              base = f"https://raw.githubusercontent.com/{REPO}/main/repo-setup.sh"
-              setup = f"curl -fsSL {base} | bash" if ch == "stable" else \
-                      f"curl -fsSL {base} | OPENCODE_CHANNEL={ch} bash"
-              cards.append(f"""
-<div class="card">
-  <div class="head"><span class="ch {ch}">{ch}</span><span class="ver">opencode {html.escape(ver)}</span></div>
-  <p>{html.escape(blurb)}</p>
-  <pre><code>{html.escape(setup)}</code></pre>
-  <p class="alt">apt line: <code>deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic {ch} main</code>
-   · <a href="https://github.com/{REPO}/releases/tag/{tag}">release {html.escape(tag)}</a></p>
-</div>""")
-          page = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>opencode for Termux — package repository</title>
-<style>
-body{{background:#0d1117;color:#d8dee6;font-family:system-ui,-apple-system,sans-serif;max-width:720px;margin:0 auto;padding:2rem 1rem;line-height:1.5}}
-a{{color:#6ea8fe}} code{{background:#161b22;border:1px solid #2b3240;border-radius:6px;padding:.1rem .35rem;font-size:.85em;word-break:break-all}}
-pre code{{display:block;padding:.8rem;overflow-x:auto}}
-.card{{border:1px solid #2b3240;border-radius:12px;padding:1rem 1.2rem;margin:1rem 0;background:#0f141b}}
-.head{{display:flex;gap:.7rem;align-items:center;margin-bottom:.3rem}}
-.ch{{font-weight:700;padding:.15rem .6rem;border-radius:99px;font-size:.8rem}}
-.stable{{background:#1a3d2a;color:#5ad19c}}.beta{{background:#41351a;color:#e6c05a}}.dev{{background:#152a44;color:#6ea8fe}}
-.ver{{font-weight:600}} p{{margin:.4rem 0}} .alt{{color:#9aa4b2;font-size:.85rem}} .alt code{{font-size:.95em}}
-footer{{margin-top:2rem;color:#8a94a3;font-size:.85rem}}
-</style></head><body>
-<h1>opencode for Termux</h1>
-<p>Signed apt repository for <a href="https://github.com/{REPO}">{REPO}</a> —
-native Bionic builds of <a href="https://opencode.ai">opencode</a>.
-Add a channel, then <code>pkg upgrade opencode</code> keeps it current.</p>
-{''.join(cards)}
-<footer>Regenerated and re-signed automatically after every release · {html.escape(now)} UTC<br>
-Key: <a href="opencode-bionic.gpg">opencode-bionic.gpg</a> · <a href="opencode-bionic.asc">.asc</a>
-· Full docs in the <a href="https://github.com/{REPO}#readme">repo README</a></footer>
-</body></html>"""
+          for ch, ver in rows:
+              setup = "curl -fsSL %s | bash" % setup_base
+              if ch != "stable":
+                  setup = "curl -fsSL %s | OPENCODE_CHANNEL=%s bash" % (setup_base, ch)
+              tag = "v" + ver
+              rel = "https://github.com/%s/releases/tag/%s" % (REPO, tag)
+              cards.append(
+                  '<div class="card"><div class="head"><span class="ch %s">%s</span>'
+                  '<span class="ver">opencode %s</span></div>'
+                  '<p class="blurb">%s</p>'
+                  "<pre><code>%s</code></pre>"
+                  '<p class="alt">apt line: <code>deb [arch=aarch64] %s %s main</code> &middot; '
+                  '<a href="%s">release %s</a></p></div>'
+                  % (ch, ch, html.escape(ver), html.escape(blurb), html.escape(setup),
+                     base_url, ch, rel, html.escape(tag))
+              )
+          bg = '"'.join(["", ""]) or ""
+          page = "".join([
+              '<!doctype html><html lang="en"><head><meta charset="utf-8">',
+              '<meta name="viewport" content="width=device-width,initial-scale=1">',
+              "<title>opencode for Termux - package repository</title>",
+              "<style>",
+              "body{background:#0d1117;color:#d8dee6;font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:2rem 1rem;line-height:1.5}",
+              "a{color:#6ea8fe}",
+              "code{background:#161b22;border:1px solid #2b3240;border-radius:6px;padding:.1rem .35rem;font-size:.85em;word-break:break-all}",
+              "pre code{display:block;padding:.8rem;overflow-x:auto}",
+              ".card{border:1px solid #2b3240;border-radius:12px;padding:1rem 1.2rem;margin:1rem 0;background:#0f141b}",
+              ".head{display:flex;gap:.7rem;align-items:center;margin-bottom:.3rem}",
+              ".ch{font-weight:700;padding:.15rem .6rem;border-radius:99px;font-size:.8rem}",
+              ".ch.stable{background:#1a3d2a;color:#5ad19c}.ch.beta{background:#41351a;color:#e6c05a}.ch.dev{background:#152a44;color:#6ea8fe}",
+              ".ver{font-weight:600}p{margin:.4rem 0}.blurb{color:#aeb7c4;font-size:.92rem}",
+              ".alt{color:#9aa4b2;font-size:.85rem}.alt code{font-size:.95em}",
+              "footer{margin-top:2rem;color:#8a94a3;font-size:.85rem}",
+              "</style></head><body>",
+              "<h1>opencode for Termux</h1>",
+              '<p>Signed apt repository for <a href="https://github.com/%s">%s</a> &#8212; '
+              "native Bionic builds of <a href=\"https://opencode.ai\">opencode</a>. "
+              "Add a channel, then <code>pkg upgrade opencode</code> keeps it current.</p>"
+              % (REPO, REPO),
+              "".join(cards),
+              "<footer>Regenerated and re-signed automatically after every release &#183; %s UTC<br>"
+              'Key: <a href="opencode-bionic.gpg">opencode-bionic.gpg</a> &#183; '
+              '<a href="opencode-bionic.asc">.asc</a> &#183; '
+              'full docs in the <a href="https://github.com/%s#readme">repo README</a></footer>'
+              % (html.escape(now), REPO),
+              "</body></html>",
+          ])
           open("repo/index.html", "w").write(page)
-          print(f"index.html: {len(rows)} channel card(s)")
+          print("index.html: %d channel card(s)" % len(rows))
           PY
           find repo -type f | sort
 
