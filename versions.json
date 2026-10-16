@@ -15,5 +15,9 @@
   "bunPty": {
     "version": "0.4.8",
     "assetUrl": "https://github.com/bd-loser/bun-termux/releases/download/bun-pty-v0.4.8/librust_pty_arm64_bionic.so"
+  },
+  "ptyService": {
+    "version": "0.2.0",
+    "assetUrl": "https://github.com/bd-loser/bun-termux/releases/download/opencode-pty-v0.2.0/opencode-pty-android-aarch64"
   }
 }

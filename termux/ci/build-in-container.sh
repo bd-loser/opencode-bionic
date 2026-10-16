@@ -119,54 +119,40 @@ then
 fi
 echo "→ bun-pty Bionic embedded: $BUN_PTY_DIR/librust_pty_arm64.so"
 
-
-# Embed the native pty service, or skip it like the 1.x builds did.
-#
-# 1.x's build-termux.ts never embedded a pty binary at all — opencode's own
-# pty binding is typed `... | undefined` and packages/cli/script/build.ts
-# already stubs `virtual:persistent-pty/pty-binding.ts` with
-# `export default undefined` when resolution fails, so shipping without it
-# is a supported configuration.
-#
-# Building @opencode-ai/pty from source is what makes the *embeddable* arm64
-# service available: opencode-pty's build.rs drives `zig build` against
-# Ghostty, and in a container Zig cannot resolve the host Android API level
-# (it shells out to `getprop`, an Android system binary that Termux does not
-# ship), so that build dies with ApiLevelQueryFailed. Opt in explicitly once
-# a `getprop` shim or an explicit API level is wired up.
-if [ "${OPENCODE_EMBED_PTY:-0}" = "1" ]; then
-  if [ ! -f "$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu/bin/opencode-pty" ]; then
-    echo "→ building @opencode-ai/pty from source for Bionic"
-
-  # Zig comes from the Termux repo (currently 0.16.0, matching upstream CI)
-  # — needed by opencode-pty's build.rs to compile the Ghostty terminal
-  # emulation library. Assert rather than download: ziglang.org's tarball
-  # naming is unstable across releases, which is how this step 404'd.
-  command -v zig >/dev/null 2>&1 || {
-    echo "error: zig not found after 'apt install zig'" >&2
-    exit 1
-  }
-  echo "→ using zig $(zig version) at $(command -v zig)"
-
-  PTY_SRC="$HOME/opencode-pty-src"
-  rm -rf "$PTY_SRC"
-  git clone --depth 1 https://github.com/anomalyco/opencode-pty.git "$PTY_SRC"
-  cd "$PTY_SRC"
-  # build.rs fetches Ghostty source and builds it with Zig; cargo builds the service.
-  cargo build --release
-  PTY_BIN="$(find target/release -name 'opencode-pty' -type f | head -1)"
-  if [ -z "$PTY_BIN" ]; then
-    echo "error: opencode-pty build produced no binary" >&2
-    exit 1
-  fi
-  PTY_PKG="$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu"
-  mkdir -p "$PTY_PKG/bin"
-  cp "$PTY_BIN" "$PTY_PKG/bin/opencode-pty"
-  chmod +x "$PTY_PKG/bin/opencode-pty"
-  cat > "$PTY_PKG/package.json" <<PKGJSON
+# Persistent terminal daemon (@opencode-ai/pty). The official wheels cannot
+# run on Android: the gnu wheel links glibc, and the musl wheel hardcodes its
+# Unix socket under /tmp, which is read-only. bun-termux builds the daemon for
+# Bionic with the socket routed through OPENCODE_PTY_SOCKET_DIR/TMPDIR — this
+# embeds it into the compiled binary as the gnu wheel the resolver looks up.
+# The kernel execs it as a child process; its default runtime dir sits under
+# XDG_STATE_HOME, which Termux resolves to a writable path.
+if [ "${OPENCODE_EMBED_PTY:-1}" = "1" ]; then
+PTYD_VERSION="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['ptyService']['version'])")"
+PTYD_URL="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['ptyService']['assetUrl'])")"
+PTYD_PKG="$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu"
+mkdir -p "$PTYD_PKG/bin"
+echo "→ fetching Bionic opencode-pty daemon $PTYD_VERSION"
+curl -fsSL -o "$PTYD_PKG/bin/opencode-pty" "$PTYD_URL"
+chmod 0755 "$PTYD_PKG/bin/opencode-pty"
+if ! python3 - "$PTYD_PKG/bin/opencode-pty" <<'PYELF'
+import struct, sys
+h = open(sys.argv[1], "rb").read(20)
+assert h[:4] == b"\x7fELF", "not an ELF"
+assert h[4] == 2, "not 64-bit"
+assert h[5] == 1, "not little-endian"
+machine = struct.unpack_from("<H", h, 18)[0]
+assert machine == 183, f"not AArch64 (e_machine={machine})"
+PYELF
+then
+  echo "error: pty daemon is not an aarch64 ELF" >&2
+  exit 1
+fi
+cat > "$PTYD_PKG/package.json" <<PKGJSON
 {
   "name": "@opencode-ai/pty-linux-arm64-gnu",
-  "version": "0.2.0",
+  "version": "$PTYD_VERSION",
   "description": "OpenCode persistent PTY service for linux-arm64 (Bionic build)",
   "license": "MIT",
   "os": ["linux"],
@@ -178,11 +164,9 @@ if [ "${OPENCODE_EMBED_PTY:-0}" = "1" ]; then
   "files": ["bin"]
 }
 PKGJSON
-  cd "$BUILD_ROOT"
-  echo "→ pty installed: $PTY_PKG/bin/opencode-pty ($(du -h "$PTY_PKG/bin/opencode-pty" | cut -f1))"
-  fi
+echo "→ pty daemon embedded: $PTYD_PKG/bin/opencode-pty"
 else
-  echo "→ skipping native pty embed (OPENCODE_EMBED_PTY != 1); binding compiles to undefined"
+  echo "→ skipping pty daemon embed (OPENCODE_EMBED_PTY=0); binding compiles to undefined"
 fi
 
 cd -
