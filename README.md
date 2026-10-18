@@ -26,11 +26,23 @@ anything.
 
 Pick a line, paste one command inside Termux:
 
-| Line | Run |
-|---|---|
-| **stable** *(1.x — default)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| bash` |
-| **beta** *(2.x — recommended for v2)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=beta bash` |
-| **dev** *(2.x — bleeding edge)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=dev bash` |
+**Stable** *(1.x — default)* — copy, paste, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | bash
+```
+
+**Beta** *(2.x — recommended for v2)*:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=beta bash
+```
+
+**Dev** *(2.x — bleeding edge)*:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=dev bash
+```
 
 The script installs the signing key, points apt at this repo, and installs
 opencode. From then on `pkg upgrade opencode` keeps you current. Prefer
