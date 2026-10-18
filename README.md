@@ -141,19 +141,6 @@ release. Other channels live on their own branch
 | `bun-pty` (Bionic pty `.so`, embedded) | `0.4.8` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.8)) |
 
 <!-- /versions:table -->
-
-### Latest build on each line
-
-Updated automatically after every release — the version string is what `apt policy opencode` / the .deb carries:
-
-<!-- versions:channels -->
-| Line | Latest build |
-|---|---|
-| **[stable](https://github.com/bd-loser/opencode-bionic/tree/main)** | [`1.19.3`](https://github.com/bd-loser/opencode-bionic/releases/tag/v1.19.3) |
-| **[beta](https://github.com/bd-loser/opencode-bionic/tree/beta)** | [`2.0.32-beta.838b8f10`](https://github.com/bd-loser/opencode-bionic/releases/tag/v2.0.32-beta.838b8f10) |
-| **[dev](https://github.com/bd-loser/opencode-bionic/tree/dev)** | [`2.0.32-dev.07bbd0fd`](https://github.com/bd-loser/opencode-bionic/releases/tag/v2.0.32-dev.07bbd0fd) |
-<!-- /versions:channels -->
-
 ## FAQ
 
 <details>
