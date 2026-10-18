@@ -24,17 +24,17 @@ anything.
 
 ## Install
 
-Choose a channel; everything else is automatic:
+Pick a line, paste one command inside Termux:
 
-| You want | Run inside Termux |
+| Line | Run |
 |---|---|
-| **stable** *(recommended)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| bash` |
-| **beta** | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=beta bash` |
-| **dev** | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=dev bash` |
+| **stable** *(1.x — default)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| bash` |
+| **beta** *(2.x — recommended for v2)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=beta bash` |
+| **dev** *(2.x — bleeding edge)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=dev bash` |
 
-The script adds this signed apt repository and installs opencode — from then
-on `pkg upgrade opencode` keeps you on your channel's newest build. Rather
-not pipe anything to bash? The script only automates these two commands:
+The script installs the signing key, points apt at this repo, and installs
+opencode. From then on `pkg upgrade opencode` keeps you current. Prefer
+typing the commands yourself?
 
 ```bash
 curl -fsSL https://bd-loser.github.io/opencode-bionic/opencode-bionic.gpg \
@@ -44,42 +44,27 @@ echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main"
 pkg update && pkg install opencode
 ```
 
-Swap `stable` for `beta` or `dev` in the `deb` line to switch lines — one
-suite at a time, the package is `opencode` in all of them.
-
-### Prefer a single .deb, or an exact version?
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | bash
-```
-
-`install.sh` SHA256-verifies and dpkg-installs the latest **stable**. It can
-also install **any version ever shipped** — the apt repo carries only each
-channel's newest build:
-
-```bash
-# exact versions are full strings: dev/beta carry a commit suffix, bare
-# "2.0.30" does not exist — use e.g. 2.0.30-dev.fc2fc596
-curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_VERSION=v1.18.35 bash
-curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh | OPENCODE_CHANNEL=beta OPENCODE_VERSION=v2.0.30-beta.f834dd8e bash
-```
+To switch lines — say, 1.x to v2 — rerun the one-liner for the other line
+(it rewrites the sources entry and installs across downgrades), or edit the
+suite (`stable`/`beta`/`dev`) in
+`$PREFIX/etc/apt/sources.list.d/opencode-bionic.list` yourself. The package
+is `opencode` on every line.
 
 ### Channels
 
-| Channel | Builds from | Tag pattern | Install env |
-|---|---|---|---|
-| **stable** *(default)* | upstream release tags | `vX.Y.Z` | — |
-| **beta** | upstream `beta` branch | `vX.Y.Z-beta.<sha8>` | `OPENCODE_CHANNEL=beta` |
-| **dev** | upstream `dev` branch | `vX.Y.Z-dev.<sha8>` | `OPENCODE_CHANNEL=dev` |
+All lines build automatically from upstream — an hourly watcher mirrors
+upstream moves, at most about an hour behind, one release per upstream
+version:
 
-Rolling lines ship **one build per upstream version** — the first commit that
-carries a new version is built; later commits of the same version are skipped.
-All of it is automated: an hourly watcher detects upstream moves and mirrors
-them, at most about an hour behind. Browse:
-[all releases](https://github.com/bd-loser/opencode-bionic/releases) ·
-[beta & dev](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) ·
-[tags](https://github.com/bd-loser/opencode-bionic/tags) ·
-[live package index](https://bd-loser.github.io/opencode-bionic/).
+| Channel | Tracks | Releases |
+|---|---|---|
+| **stable** *(default)* | upstream release tags | [tags](https://github.com/bd-loser/opencode-bionic/releases) |
+| **beta** | upstream `beta` branch | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
+| **dev** | upstream `dev` branch | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
+
+New to opencode, or on 1.x and curious about v2? **v2 ships on the beta and
+dev lines — beta is the recommended start.** Live package index:
+[bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/).
 
 ## How it compares
 
@@ -137,7 +122,7 @@ release. Other channels live on their own branch
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `2.0.32` |
+| opencode (upstream) | `1.19.1` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
 | `bun-termux` runtime | `1.4.3-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
