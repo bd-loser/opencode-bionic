@@ -56,6 +56,10 @@ jobs:
           dl "$STABLE_TAG" stable
           dl "$BETA_TAG" beta
           dl "$DEV_TAG" dev
+          # Camoufox (Bionic-native anti-fingerprint Firefox) — same repo, one key.
+          gh release download bionic-latest -R bd-loser/camoufox-termux \
+            -p "camoufox-*aarch64.deb" -D "pool/stable/" --clobber \
+            || echo "skip camoufox: bionic-latest not published yet"
           find pool -type f | sort
 
       - name: Build signed apt tree + channel index
@@ -102,6 +106,16 @@ jobs:
           base_url = "https://bd-loser.github.io/opencode-bionic"
           setup_base = "https://raw.githubusercontent.com/%s/main/repo-setup.sh" % REPO
           cards = []
+          if any("camoufox" in d for d in glob.glob("pool/*/*.deb")):
+              setup_base = "https://raw.githubusercontent.com/%s/main/repo-setup.sh" % REPO
+              cards.append(
+                  '<div class="card"><div class="head"><span class="ch stable">camoufox</span>'
+                  '<span class="ver">Bionic-native Firefox</span></div>'
+                  '<p class="blurb">Anti-fingerprint Firefox (Camoufox) built natively for Termux aarch64.</p>'
+                  "<pre><code>pkg install camoufox</code></pre>"
+                  '<p class="alt">drives via juggler/playwright &middot; '
+                  '<a href="https://github.com/bd-loser/camoufox-termux">repo camoufox-termux</a></p></div>'
+              )
           for ch, ver in rows:
               setup = "curl -fsSL %s | bash" % setup_base
               if ch != "stable":
