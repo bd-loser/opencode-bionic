@@ -141,6 +141,7 @@ release. Other channels live on their own branch
 | `bun-pty` (Bionic pty `.so`, embedded) | `0.4.11` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.11)) |
 
 <!-- /versions:table -->
+
 ## FAQ
 
 <details>
