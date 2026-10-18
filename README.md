@@ -26,11 +26,23 @@ anything.
 
 Pick a line, paste one command inside Termux:
 
-| Line | Run |
-|---|---|
-| **stable** *(1.x — default)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| bash` |
-| **beta** *(2.x — recommended for v2)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=beta bash` |
-| **dev** *(2.x — bleeding edge)* | `curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh \| OPENCODE_CHANNEL=dev bash` |
+**Stable** *(1.x — default)* — copy, paste, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | bash
+```
+
+**Beta** *(2.x — recommended for v2)*:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=beta bash
+```
+
+**Dev** *(2.x — bleeding edge)*:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=dev bash
+```
 
 The script installs the signing key, points apt at this repo, and installs
 opencode. From then on `pkg upgrade opencode` keeps you current. Prefer
@@ -129,6 +141,18 @@ release. Other channels live on their own branch
 | `bun-pty` (Bionic pty `.so`, embedded) | `0.4.8` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.8)) |
 
 <!-- /versions:table -->
+
+### Latest build on each line
+
+Updated automatically after every release — the version string is what `apt policy opencode` / the .deb carries:
+
+<!-- versions:channels -->
+| Line | Latest build |
+|---|---|
+| **[stable](https://github.com/bd-loser/opencode-bionic/tree/main)** | [`1.19.3`](https://github.com/bd-loser/opencode-bionic/releases/tag/v1.19.3) |
+| **[beta](https://github.com/bd-loser/opencode-bionic/tree/beta)** | [`2.0.32-beta.838b8f10`](https://github.com/bd-loser/opencode-bionic/releases/tag/v2.0.32-beta.838b8f10) |
+| **[dev](https://github.com/bd-loser/opencode-bionic/tree/dev)** | [`2.0.32-dev.07bbd0fd`](https://github.com/bd-loser/opencode-bionic/releases/tag/v2.0.32-dev.07bbd0fd) |
+<!-- /versions:channels -->
 
 ## FAQ
 

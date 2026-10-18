@@ -421,3 +421,10 @@ jobs:
           fi
           git commit -q -m "chore(kit): rolling point -> opencode $PKGVER (built v${PKGVER}-${CHANNEL})"
           git push -q origin "HEAD:$CHANNEL"
+
+      - name: Refresh per-line build table
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: python3 termux/ci/refresh-channels.py
