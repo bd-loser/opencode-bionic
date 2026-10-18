@@ -11,8 +11,8 @@ command -v curl >/dev/null || { echo "pkg install curl first" >&2; exit 1; }
 curl -fsSL "$BASE/opencode-bionic.gpg" -o "$PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg"
 echo "deb [arch=aarch64] $BASE $CH main" > "$PREFIX/etc/apt/sources.list.d/opencode-bionic.list"
 pkg update -y
-if pkg install -y opencode; then
-  echo "Installed. From now on: pkg upgrade opencode keeps you current."
+if pkg install -y --allow-downgrades opencode; then
+  echo "Installed. pkg upgrade opencode keeps you current; rerun with OPENCODE_CHANNEL=beta or dev to switch lines."
 else
   echo "pkg install opencode failed - run it manually to see the error" >&2
   exit 1
