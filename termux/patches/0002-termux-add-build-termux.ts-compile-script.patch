@@ -96,7 +96,7 @@ index 0000000..f5ad162
 +  conditions: ["bun", "node"],
 +  tsconfig: "./tsconfig.json",
 +  plugins: [opentuiAliasPlugin, plugin],
-+  external: ["node-gyp"],
++  external: ["node-gyp", "@ff-labs/fff-bun"],
 +  format: "esm",
 +  minify: true,
 +  sourcemap: sourcemapsFlag ? "linked" : "none",
