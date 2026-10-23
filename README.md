@@ -137,7 +137,7 @@ release. Other channels live on their own branch
 | opencode (upstream) | `2.1.2` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.6.6` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.6.6` |
-| `bun-termux` runtime | `1.4.3-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
+| `bun-termux` runtime | `1.4.4-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
 | `bun-pty` (Bionic pty `.so`, embedded) | `0.4.11` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.11)) |
 
 <!-- /versions:table -->
