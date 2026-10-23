@@ -12,8 +12,8 @@
 // The "config delta" (root package.json cleanup, catalog aliases,
 // optionalDependencies, plugin peer bumps) is expressed programmatically
 // here rather than as a patch because the shape survives upstream
-// reformatting. The "source delta" (bunfig.toml, fff.bun.ts,
-// build-termux.ts) lives in termux/patches/ as unified diffs.
+// reformatting. The "source delta" (bunfig.toml,
+// packages/cli/script/build.ts) lives in termux/patches/ as unified diffs.
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs"
 import path from "node:path"
@@ -50,6 +50,10 @@ type Check = { name: string; ok: boolean; msg: string; fix?: () => void }
 // checks touch root package.json — if each captured its own `pkg` in a
 // closure, the last write would clobber earlier edits.
 function checkOpencodeVersion(target: string): Check | null {
+  // Rolling builds (beta/dev) carry their own version (e.g. 2.0.6-beta.<sha>)
+  // via OPENCODE_VERSION, which upstream's Script.version prefers. Rewriting
+  // package.json to versions.json's pin would mislabel the tree.
+  if (process.env.OPENCODE_VERSION) return null
   // 2.x moved the version to root package.json; 1.x had it in packages/opencode/.
   const file2x = path.join(target, "package.json")
   const file1x = path.join(target, "packages/opencode/package.json")
@@ -70,6 +74,7 @@ function checkOpencodeVersion(target: string): Check | null {
 }
 
 function checkPluginVersion(target: string): Check | null {
+  if (process.env.OPENCODE_VERSION) return null
   const file = path.join(target, "packages/plugin/package.json")
   if (!existsSync(file)) return null
   const cur = readJson(file).version
@@ -151,6 +156,55 @@ function checkAndroidNative(target: string): Check | null {
   }
 }
 
+// bunfig.toml: the 3-day bun minimumReleaseAge gate would block the fresh
+// @androidtui/* releases. Upstream already lists its own @opentui/@ff-labs
+// prebuilts in minimumReleaseAgeExcludes; we append the @androidtui aliases
+// we ship. Programmatic (not a patch hunk) because the line's contents change
+// upstream on most releases and the array is the only thing we touch.
+function checkBunfigReleaseAge(target: string): Check | null {
+  const file = path.join(target, "bunfig.toml")
+  if (!existsSync(file)) return null
+  const want = ["@androidtui/core", "@androidtui/core-android-arm64", "@androidtui/react", "@androidtui/solid", "@androidtui/keymap"]
+  // The same gate also blocks fresh prereleases upstream pins in its catalog
+  // (typescript 7.1.0-beta, @lydell/node-pty betas, drizzle rcs, ...). Derive
+  // extra excludes from the tree itself so upstream's prerelease churn can
+  // never wedge the build again.
+  const pkgFile = path.join(target, "package.json")
+  if (existsSync(pkgFile)) {
+    const catalog = (readJson(pkgFile).workspaces ?? {}).catalog ?? {}
+    for (const [key, spec] of Object.entries<string>(catalog)) {
+      if (!/-((beta|rc|alpha|dev|canary|next|preview)([.\d-]|$))/i.test(spec)) continue
+      const alias = spec.match(/^npm:(.+)@([^@]+)$/)
+      const name = alias ? alias[1]! : key
+      if (!want.includes(name)) want.push(name)
+    }
+  }
+  const lines = readFileSync(file, "utf8").split("\n")
+  const idx = lines.findIndex((l) => l.trimStart().startsWith("minimumReleaseAgeExcludes"))
+  if (idx === -1) return null
+  const line = lines[idx]!
+  const match = line.match(/^minimumReleaseAgeExcludes\s*=\s*\[(.*)\]\s*$/)
+  if (!match) return null
+  const current = match[1]!.includes("@androidtui")
+    ? [...match[1]!.matchAll(/"([^"]+)"/g)].map((m) => m[1]!)
+    : []
+  const missing = want.filter((w) => !current.includes(w))
+  return {
+    name: "bunfig minimumReleaseAgeExcludes has @androidtui/*",
+    ok: missing.length === 0,
+    msg: missing.length === 0 ? "all 5 present" : `missing ${missing.join(", ")}`,
+    fix: () => {
+      const now = readFileSync(file, "utf8").split("\n")
+      const cur = now[idx]!
+      const body = cur.match(/^minimumReleaseAgeExcludes\s*=\s*\[(.*)\]\s*$/)![1]!
+      const have = [...body.matchAll(/"([^"]+)"/g)].map((m) => m[1]!)
+      for (const w of want) if (!have.includes(w)) have.push(w)
+      now[idx] = `minimumReleaseAgeExcludes = [${have.map((x) => JSON.stringify(x)).join(", ")}]`
+      writeFileSync(file, now.join("\n"))
+    },
+  }
+}
+
 // Remove install hooks, native builds, and fff-bun patching unused on Termux.
 function checkRootConfigCleanup(target: string): Check | null {
   const file = path.join(target, "package.json")
@@ -159,7 +213,8 @@ function checkRootConfigCleanup(target: string): Check | null {
   const hasPostinstall = pkg.scripts?.postinstall !== undefined
   const hasPrepare = pkg.scripts?.prepare !== undefined
   const hasTrusted = Array.isArray(pkg.trustedDependencies) && pkg.trustedDependencies.length > 0
-  const hasFffPatch = pkg.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined
+  const fffPatchKeys = Object.keys(pkg.patchedDependencies ?? {}).filter((k) => k.startsWith("@ff-labs/fff-bun@"))
+  const hasFffPatch = fffPatchKeys.length > 0
   const drifted = hasPostinstall || hasPrepare || hasTrusted || hasFffPatch
   const detail = [
     hasPostinstall && "postinstall",
@@ -178,8 +233,9 @@ function checkRootConfigCleanup(target: string): Check | null {
       if (p.scripts?.postinstall !== undefined) delete p.scripts.postinstall
       if (p.scripts?.prepare !== undefined) delete p.scripts.prepare
       if (Array.isArray(p.trustedDependencies) && p.trustedDependencies.length > 0) p.trustedDependencies = []
-      if (p.patchedDependencies?.["@ff-labs/fff-bun@0.9.3"] !== undefined)
-        delete p.patchedDependencies["@ff-labs/fff-bun@0.9.3"]
+      if (p.patchedDependencies)
+        for (const k of Object.keys(p.patchedDependencies))
+          if (k.startsWith("@ff-labs/fff-bun@")) delete p.patchedDependencies[k]
       writeJson(file, p)
     },
   }
@@ -317,6 +373,7 @@ async function main() {
     checkPluginVersion(target),
     checkCatalogOpentui(target),
     checkAndroidNative(target),
+    checkBunfigReleaseAge(target),
     checkRootConfigCleanup(target),
   ].filter((c): c is Check => c !== null)
 
