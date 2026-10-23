@@ -165,6 +165,20 @@ function checkBunfigReleaseAge(target: string): Check | null {
   const file = path.join(target, "bunfig.toml")
   if (!existsSync(file)) return null
   const want = ["@androidtui/core", "@androidtui/core-android-arm64", "@androidtui/react", "@androidtui/solid", "@androidtui/keymap"]
+  // The same gate also blocks fresh prereleases upstream pins in its catalog
+  // (typescript 7.1.0-beta, @lydell/node-pty betas, drizzle rcs, ...). Derive
+  // extra excludes from the tree itself so upstream's prerelease churn can
+  // never wedge the build again.
+  const pkgFile = path.join(target, "package.json")
+  if (existsSync(pkgFile)) {
+    const catalog = (readJson(pkgFile).workspaces ?? {}).catalog ?? {}
+    for (const [key, spec] of Object.entries<string>(catalog)) {
+      if (!/-((beta|rc|alpha|dev|canary|next|preview)([.\d-]|$))/i.test(spec)) continue
+      const alias = spec.match(/^npm:(.+)@([^@]+)$/)
+      const name = alias ? alias[1]! : key
+      if (!want.includes(name)) want.push(name)
+    }
+  }
   const lines = readFileSync(file, "utf8").split("\n")
   const idx = lines.findIndex((l) => l.trimStart().startsWith("minimumReleaseAgeExcludes"))
   if (idx === -1) return null
