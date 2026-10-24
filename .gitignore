@@ -31,3 +31,4 @@ core
 # Random build cache dirs we occasionally see
 .scripts/
 .direnv/
+.wrangler/
