@@ -49,6 +49,7 @@ opencode. From then on `pkg upgrade opencode` keeps you current. Prefer
 typing the commands yourself?
 
 ```bash
+mkdir -p $PREFIX/etc/apt/trusted.gpg.d $PREFIX/etc/apt/sources.list.d
 curl -fsSL https://bd-loser.github.io/opencode-bionic/opencode-bionic.gpg \
   -o $PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg
 echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main" \
