@@ -8,6 +8,8 @@ CH="${OPENCODE_CHANNEL:-stable}"
 case "$CH" in stable|beta|dev) ;; *) echo "OPENCODE_CHANNEL must be stable, beta or dev (got: $CH)" >&2; exit 1 ;; esac
 [ -n "${PREFIX:-}" ] || { echo "Run this inside Termux." >&2; exit 1; }
 command -v curl >/dev/null || { echo "pkg install curl first" >&2; exit 1; }
+# Fresh bootstraps may not have the apt dirs yet (no pkg update ever ran).
+mkdir -p "$PREFIX/etc/apt/trusted.gpg.d" "$PREFIX/etc/apt/sources.list.d"
 curl -fsSL "$BASE/opencode-bionic.gpg" -o "$PREFIX/etc/apt/trusted.gpg.d/opencode-bionic.gpg"
 echo "deb [arch=aarch64] $BASE $CH main" > "$PREFIX/etc/apt/sources.list.d/opencode-bionic.list"
 pkg update -y
