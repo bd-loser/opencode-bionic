@@ -51,7 +51,10 @@ info "Running script/build.ts..."
 cd "$OPENCODE_ROOT/packages/cli"
 
 set +e
-"$BUN_BIN" run script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui
+# 2.2.0 moved target selection from argv to the OPENCODE_TARGET env (the argv
+# flag is ignored now, which would kick off all 12 platform builds and crash on
+# canary-bun baseline downloads):
+OPENCODE_TARGET=linux-arm64 "$BUN_BIN" run script/build.ts --skip-install --skip-web-ui
 BUILD_EXIT=$?
 set -e
 
