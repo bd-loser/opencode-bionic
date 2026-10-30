@@ -3,7 +3,7 @@
 > [opencode](https://opencode.ai), the open-source AI coding agent, running
 > **natively on your Android phone** through Termux. No proot, no chroot, no
 > VM, no root, no glibc. One self-contained binary, a signed apt repository,
-> three channels.
+> two channels (stable and dev).
 
 <!-- versions:badges -->
 [![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.6.8-green.svg)](https://www.npmjs.com/package/@androidtui/core)
@@ -32,13 +32,7 @@ Pick a line, paste one command inside Termux:
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | bash
 ```
 
-**Beta** *(2.x — recommended for v2)*:
-
-```sh
-curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=beta bash
-```
-
-**Dev** *(2.x — bleeding edge)*:
+**Dev** *(2.x — recommended for v2)*:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=dev bash
@@ -59,7 +53,7 @@ pkg update && pkg install opencode
 
 To switch lines — say, 1.x to v2 — rerun the one-liner for the other line
 (it rewrites the sources entry and installs across downgrades), or edit the
-suite (`stable`/`beta`/`dev`) in
+suite (`stable`/`dev`) in
 `$PREFIX/etc/apt/sources.list.d/opencode-bionic.list` yourself. The package
 is `opencode` on every line.
 
@@ -72,11 +66,10 @@ version:
 | Channel | Tracks | Releases |
 |---|---|---|
 | **stable** *(default)* | upstream release tags | [tags](https://github.com/bd-loser/opencode-bionic/releases) |
-| **beta** | upstream `beta` branch | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
 | **dev** | upstream `dev` branch | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
 
-New to opencode, or on 1.x and curious about v2? **v2 ships on the beta and
-dev lines — beta is the recommended start.** Live package index:
+New to opencode, or on 1.x and curious about v2? **v2 ships on the dev line
+— that is the recommended start.** Live package index:
 [bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/).
 
 ## How it compares
@@ -89,7 +82,7 @@ is different here:
 | | opencode-bionic | Hope2333/opencode-termux | guysoft/opencode-termux |
 |---|---|---|---|
 | libc | native Bionic | native Bionic | native Bionic |
-| release lines | stable + beta + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
+| release lines | stable + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
 | dev freshness | tracks upstream commits hourly | — | — |
 | terminal sessions (PTY) | works, bun-pty rebuilt for Bionic | — | — |
 | what you install | one self-contained .deb | one of five package families | package + wrapper + libs |
@@ -127,9 +120,8 @@ This project assembles the three pieces that make opencode run on Bionic:
 ## Current pins
 
 This channel's exact build inputs, regenerated automatically on every
-release. Other channels live on their own branch
-([beta](https://github.com/bd-loser/opencode-bionic/tree/beta) /
-[dev](https://github.com/bd-loser/opencode-bionic/tree/dev)), all sourced from
+release. The other channel lives on its own branch
+([dev](https://github.com/bd-loser/opencode-bionic/tree/dev)), all sourced from
 [`versions.json`](./versions.json).
 
 <!-- versions:table -->
@@ -173,8 +165,8 @@ see <a href="https://opencode.ai/docs">opencode.ai/docs</a>.
 <details>
 <summary><b>How fast do updates land?</b></summary>
 
-Automatically, within about an hour: upstream stable, beta, and dev activity
-each trigger a matching build here (one release per upstream version).
+Automatically, within about an hour: upstream stable and dev activity each
+trigger a matching build here (one release per upstream version).
 See <a href="#channels">Channels</a>.
 </details>
 
