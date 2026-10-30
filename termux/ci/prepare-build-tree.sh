@@ -6,7 +6,7 @@
 #
 # After this returns, <target_dir> contains a ready-to-build opencode tree
 # at the pinned version with all our modifications applied. Callers can
-# then `cd <target_dir> && bun install && bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui`.
+# then `cd <target_dir> && bun install && OPENCODE_TARGET=linux-arm64 bun packages/cli/script/build.ts --skip-install --skip-web-ui`.
 
 set -euo pipefail
 
@@ -34,4 +34,4 @@ bash "$CI_DIR/apply-patches.sh" "$TARGET"
 
 echo ""
 echo "→ build tree ready at $TARGET"
-echo "  cd $TARGET && bun install && bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui"
+echo "  cd $TARGET && bun install && OPENCODE_TARGET=linux-arm64 bun packages/cli/script/build.ts --skip-install --skip-web-ui"
