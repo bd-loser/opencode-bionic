@@ -4,13 +4,14 @@ run-name: opencode ${{ inputs.channel }}${{ inputs.upstream_ref && format(' @ {0
 # One workflow for every channel and both modes:
 #   channel=auto   detect what's new upstream and build each pending line
 #                  in one run (intended trigger: a poller, or a manual run)
-#   channel=X      force one line (stable/dev); `upstream_ref`/`version`
+#   channel=X      force one line (stable/v1/dev); `upstream_ref`/`version`
 #                  pick the tree; rolling tags are replaced, stable tags
 #                  never are.
 #
 # Each leg checks out the branch carrying its patch kit:
-#   stable -> main (vX.Y.Z)
-#   dev    -> dev   (vX.Y.Z-dev.<sha>)
+#   stable -> main (vX.Y.Z)         newest stable tag overall (now 2.x)
+#   v1     -> v1   (vX.Y.Z-v1.<sha>) newest 1.x stable tag (legacy line)
+#   dev    -> dev  (vX.Y.Z-dev.<sha>)
 # Keep this file byte-identical on all three branches.
 
 on:
@@ -19,7 +20,7 @@ on:
       channel:
         description: "auto = scan all lines; or force one"
         type: choice
-        options: [auto, stable, dev]
+        options: [auto, stable, v1, dev]
         default: auto
       upstream_ref:
         description: "With channel!=auto: upstream branch/sha/tag to build (default: the channel's branch head)"
@@ -139,7 +140,14 @@ jobs:
               echo "channel=stable without ref/version: use auto for the stable bump" >&2; exit 1
             fi
             SHA=""; VER="$VERSION_IN"; PRE="$PRE_IN"
-            if [ "$CHANNEL" != "stable" ]; then
+            if [ "$CHANNEL" = "v1" ]; then
+              # Legacy 1.x line: rolling tag, built with the 1.x kit (main).
+              # Default ref is the newest v1.x tag unless one is given.
+              REF="${REF_IN:-$(gh api "repos/$UPSTREAM/tags?per_page=100" \
+                --jq '[.[].name|select(test("^v1\\.[0-9]+\\.[0-9]+$"))][0]')}"
+              [ -n "$REF" ] || { echo "error: no v1.x tag upstream" >&2; exit 1; }
+              SHA="$(gh api "repos/$UPSTREAM/commits/$REF" --jq .sha)"
+            elif [ "$CHANNEL" != "stable" ]; then
               REF="${REF_IN:-$CHANNEL}"   # default: the channel's own branch
               SHA="$(gh api "repos/$UPSTREAM/commits/$REF" --jq .sha)"
             elif [ -n "$REF_IN" ]; then
@@ -150,7 +158,7 @@ jobs:
               [ -n "$VER" ] || { echo "error: cannot determine version at $SHA" >&2; exit 1; }
             fi
             [ "$CHANNEL" = "stable" ] || { [ -n "$VERSION_IN" ] || PRE=true; }
-            KIT="$CHANNEL"; [ "$CHANNEL" = "stable" ] && KIT="main"
+            case "$CHANNEL" in stable) KIT="main";; v1) KIT="v1";; dev) KIT="dev";; esac
             # Rolling lines must leave version empty: the build job derives
             # `<ver>-<channel>.<sha8>` from the ref. A leaked probe version
             # would tag a bare vX.Y.Z prerelease instead (§ tags scheme).
