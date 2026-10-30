@@ -199,7 +199,10 @@ jobs:
 
             # --- rolling lines ----------------------------------------------
             for line in dev beta; do
-              sha="$(gh api "repos/$UPSTREAM/commits/$line" --jq .sha)"
+              # A rolling upstream branch can disappear (renamed/merged) —
+              # never let that abort the whole scan; just skip that line.
+              sha="$(gh api "repos/$UPSTREAM/commits/$line" --jq .sha 2>/dev/null || true)"
+              if [ -z "$sha" ]; then echo "$line: upstream branch '$line' not found — skipping"; continue; fi
               short="${sha:0:8}"
               ver="$(probe_version "$sha")"
               if [ -z "$ver" ]; then echo "no version at $line/$short — skipping"; continue; fi
