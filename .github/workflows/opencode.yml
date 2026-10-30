@@ -205,6 +205,27 @@ jobs:
               fi
             fi
 
+            # --- v1: newest 1.x stable tag we haven't shipped yet ----------
+            # The 1.x line still gets upstream patch releases; keep shipping
+            # them on their own channel (rolling tag, so re-runs are safe).
+            V1_TAG="$(gh api "repos/$UPSTREAM/tags?per_page=100" \
+              --jq '[.[].name|select(test("^v1\\.[0-9]+\\.[0-9]+$"))][0]' 2>/dev/null || true)"
+            if [ -z "$V1_TAG" ] || [ "$V1_TAG" = "null" ]; then
+              echo "v1: no 1.x tag upstream — skipping"
+            else
+              v1_sha="$(gh api "repos/$UPSTREAM/commits/$V1_TAG" --jq .sha 2>/dev/null || true)"
+              v1_ver="${V1_TAG#v}"
+              if [ -n "$v1_sha" ]; then
+                v1_shipped="$(gh api "repos/$OURS/releases?per_page=100" --paginate \
+                  --jq "[.[]|select((.tag_name|startswith(\"v${v1_ver}-v1.\")) and (.draft|not))][0].tag_name // empty" | head -1 || true)"
+                if [ -n "$v1_shipped" ]; then
+                  echo "v1: $v1_ver already shipping as $v1_shipped — skipping"
+                else
+                  add_leg v1 v1 "$v1_sha" "" true
+                fi
+              fi
+            fi
+
             # --- rolling lines ----------------------------------------------
             for line in dev; do
               # A rolling upstream branch can disappear (renamed/merged) —
