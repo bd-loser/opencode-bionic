@@ -11,7 +11,7 @@ packages — patches either apply cleanly or CI fails loudly.
 ```
 opencode-bionic/
 ├── versions.json              # all pins: upstream version, @androidtui, bun-termux
-├── install.sh                 # curl | bash installer (stable / beta / dev / pin)
+├── install.sh                 # curl | bash installer (stable / dev / pin)
 ├── termux/
 │   ├── patches/               # unified diffs applied to upstream
 │   ├── ci/
@@ -32,23 +32,22 @@ opencode-bionic/
 
 1. **Detect** — compare upstream releases/branch heads against our releases;
    emit one build "leg" per pending channel line.
-2. **Kit** — each leg checks out its channel branch (`main` / `beta` /
-   `dev`), which carries that line's pins in `versions.json` and matching
-   patches in `termux/patches/`.
+2. **Kit** — each leg checks out its channel branch (`main` for stable,
+   `dev` for dev), which carries that line's pins in `versions.json` and
+   matching patches in `termux/patches/`.
 3. **Prepare** — shallow-clone upstream at the pinned ref → `versions.ts`
    rewrites package.json (catalog aliases → `@androidtui/*`, optionalDeps,
    install-hook removal) → `patch -p1 --forward` applies the source patches.
 4. **Build** — Bun compiles opencode into a single Bionic aarch64 binary.
 5. **Publish** — `.deb` + checksum. Stable tags are immutable; rolling
-   prerelease tags (`*-beta.<sha8>`, `*-dev.<sha8>`) are mutable and
+   prerelease tags (`*-dev.<sha8>`) are mutable and
    auto-replaced on rebuild.
 
 ## Patches
 
-- Pinned upstream **stable** line gets its own patch series; `beta` and
-  `dev` kits carry their own (upstream refactors between majors move patch
-  context — that is why pins and patches live together per channel
-  branch).
+- The pinned upstream **stable** line gets its own patch series; the `dev`
+  kit carries its own (upstream refactors between majors move patch context
+  — that is why pins and patches live together per channel branch).
 - Every patch must apply with `patch -p1 --forward` to a shallow clone.
 
 ## Refreshing patches after upstream drift
