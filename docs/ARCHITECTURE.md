@@ -11,7 +11,7 @@ packages — patches either apply cleanly or CI fails loudly.
 ```
 opencode-bionic/
 ├── versions.json              # all pins: upstream version, @androidtui, bun-termux
-├── install.sh                 # curl | bash installer (stable / dev / pin)
+├── install.sh                 # curl | bash installer (stable / v1 / dev / pin)
 ├── termux/
 │   ├── patches/               # unified diffs applied to upstream
 │   ├── ci/
@@ -33,21 +33,22 @@ opencode-bionic/
 1. **Detect** — compare upstream releases/branch heads against our releases;
    emit one build "leg" per pending channel line.
 2. **Kit** — each leg checks out its channel branch (`main` for stable,
-   `dev` for dev), which carries that line's pins in `versions.json` and
-   matching patches in `termux/patches/`.
+   `v1` for v1, `dev` for dev), which carries that line's pins in
+   `versions.json` and matching patches in `termux/patches/`.
 3. **Prepare** — shallow-clone upstream at the pinned ref → `versions.ts`
    rewrites package.json (catalog aliases → `@androidtui/*`, optionalDeps,
    install-hook removal) → `patch -p1 --forward` applies the source patches.
 4. **Build** — Bun compiles opencode into a single Bionic aarch64 binary.
 5. **Publish** — `.deb` + checksum. Stable tags are immutable; rolling
-   prerelease tags (`*-dev.<sha8>`) are mutable and
+   prerelease tags (`*-v1.<sha8>`, `*-dev.<sha8>`) are mutable and
    auto-replaced on rebuild.
 
 ## Patches
 
-- The pinned upstream **stable** line gets its own patch series; the `dev`
-  kit carries its own (upstream refactors between majors move patch context
-  — that is why pins and patches live together per channel branch).
+- The **stable** (2.x, `main`) and `dev` (2.x) kits share one patch series;
+  the legacy **v1** (1.x, `v1`) kit carries its own (upstream refactors
+  between majors move patch context — that is why pins and patches live
+  together per channel branch).
 - Every patch must apply with `patch -p1 --forward` to a shallow clone.
 
 ## Refreshing patches after upstream drift
