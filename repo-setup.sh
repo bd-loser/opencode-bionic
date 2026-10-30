@@ -1,14 +1,14 @@
 #!/data/data/com.termux/files/usr/bin/sh
 # One-command setup for the bd-loser/opencode-bionic Termux repository.
 # Adds the signing key + sources entry, updates, installs opencode.
-#   OPENCODE_CHANNEL=stable|dev   (default: stable; legacy "beta" maps to dev)
+#   OPENCODE_CHANNEL=stable|v1|dev   (default: stable; legacy "beta" maps to dev)
 set -eu
 BASE="https://bd-loser.github.io/opencode-bionic"
 CH="${OPENCODE_CHANNEL:-stable}"
 case "$CH" in
-  stable|dev) ;;
+  stable|v1|dev) ;;
   beta) echo "note: the beta channel was retired (upstream removed its beta branch); using dev." >&2; CH=dev ;;
-  *) echo "OPENCODE_CHANNEL must be stable or dev (got: $CH)" >&2; exit 1 ;;
+  *) echo "OPENCODE_CHANNEL must be stable, v1 or dev (got: $CH)" >&2; exit 1 ;;
 esac
 [ -n "${PREFIX:-}" ] || { echo "Run this inside Termux." >&2; exit 1; }
 command -v curl >/dev/null || { echo "pkg install curl first" >&2; exit 1; }
