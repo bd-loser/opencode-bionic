@@ -4,12 +4,12 @@ run-name: opencode ${{ inputs.channel }}${{ inputs.upstream_ref && format(' @ {0
 # One workflow for every channel and both modes:
 #   channel=auto   detect what's new upstream and build each pending line
 #                  in one run (intended trigger: a poller, or a manual run)
-#   channel=X      force one line (stable/beta/dev); `upstream_ref`/`version`
+#   channel=X      force one line (stable/dev); `upstream_ref`/`version`
 #                  pick the tree; rolling tags are replaced, stable tags
 #                  never are.
 #
 # Each leg checks out the branch carrying its patch kit:
-#   stable -> main (vX.Y.Z)      beta -> beta (vX.Y.Z-beta.<sha>)
+#   stable -> main (vX.Y.Z)
 #   dev    -> dev   (vX.Y.Z-dev.<sha>)
 # Keep this file byte-identical on all three branches.
 
@@ -19,7 +19,7 @@ on:
       channel:
         description: "auto = scan all lines; or force one"
         type: choice
-        options: [auto, stable, beta, dev]
+        options: [auto, stable, dev]
         default: auto
       upstream_ref:
         description: "With channel!=auto: upstream branch/sha/tag to build (default: the channel's branch head)"
@@ -198,7 +198,7 @@ jobs:
             fi
 
             # --- rolling lines ----------------------------------------------
-            for line in dev beta; do
+            for line in dev; do
               # A rolling upstream branch can disappear (renamed/merged) —
               # never let that abort the whole scan; just skip that line.
               sha="$(gh api "repos/$UPSTREAM/commits/$line" --jq .sha 2>/dev/null || true)"
@@ -376,7 +376,7 @@ jobs:
           fi
           {
             printf 'opencode v%s — Termux/Bionic aarch64 build (%s channel).\n\n%s\n' "$RELEASE" "$CHANNEL" "$SOURCE"
-            printf '\n> **Channels:** [stable](https://github.com/%s/releases/latest) · [all prereleases (beta & dev)](https://github.com/%s/releases?q=prerelease%%3Atrue&expanded=true) · [tags](https://github.com/%s/tags) — install one-liners: https://github.com/%s#channels\n' "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY"
+            printf '\n> **Channels:** [stable](https://github.com/%s/releases/latest) · [all prereleases (dev)](https://github.com/%s/releases?q=prerelease%%3Atrue&expanded=true) · [tags](https://github.com/%s/tags) — install one-liners: https://github.com/%s#channels\n' "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY" "$GITHUB_REPOSITORY"
             if [ -n "$UP_DESC" ]; then printf '\n## %s\n\n%s\n' "$UP_TITLE" "$UP_DESC"; fi
             printf '\nInstall:\n\n```\ncurl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | %sbash\n```\n\n' "$GITHUB_REPOSITORY" "$INSTALL_ENV"
             printf 'Legacy: curl -LO https://github.com/%s/releases/download/%s/opencode_%s_aarch64.deb && dpkg -i opencode_%s_aarch64.deb\n\n' "$GITHUB_REPOSITORY" "$TAG" "$RELEASE" "$RELEASE"
