@@ -53,7 +53,7 @@ bun install 2>&1 | sed 's/^/  /' || fail "bun install failed"
 CORE_PKG_PATH=""
 for cand in \
   "$BUILD_DIR/node_modules/@opentui/core/package.json" \
-  "$BUILD_DIR/packages/opencode/node_modules/@opentui/core/package.json" \
+  "$BUILD_DIR/packages/cli/node_modules/@opentui/core/package.json" \
   "$BUILD_DIR/packages/tui/node_modules/@opentui/core/package.json" \
   "$BUILD_DIR/packages/core/node_modules/@opentui/core/package.json"
 do
@@ -67,7 +67,7 @@ ok "@opentui/core → @androidtui/core"
 header "Step 3: Build compiled binary"
 OPENCODE_ROOT="$BUILD_DIR" bash "$SCRIPT_DIR/build-opencode-termux.sh"
 
-BINARY="$BUILD_DIR/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+BINARY="$BUILD_DIR/packages/cli/dist/cli-linux-arm64/bin/opencode"
 [ -f "$BINARY" ] || fail "Binary not found at $BINARY"
 ok "Binary: $BINARY ($(du -h "$BINARY" | cut -f1))"
 

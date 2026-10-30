@@ -12,16 +12,16 @@ rejects it. Our fork adds Termux support with a small, well-scoped delta:
 
 | Kind | File | How it's expressed |
 |---|---|---|
-| Source | `bunfig.toml` | patch — adds `@androidtui/*` to `minimumReleaseAgeExcludes` |
+| Config | `bunfig.toml` | `versions.ts` — appends `@androidtui/*` to `minimumReleaseAgeExcludes` |
 | Source (new file) | `packages/cli/script/build.ts` (patched) | patch — adds @opentui/* → @androidtui/* alias plugin + Bionic workarounds to the 2.x build system |
-| Source | `packages/core/src/filesystem/fff.bun.ts` | patch — lazy-load `@ff-labs/fff-bun` (no Android binary; falls back to ripgrep) |
 | Config | `package.json` (root) | `versions.ts` — catalog aliases, `optionalDependencies`, remove `postinstall`/`prepare`/`trustedDeps`/fff-bun patch entry |
 | Config | `packages/plugin/package.json` | `versions.ts` — bump version + `peerDependencies` |
 
 Split rationale: **patches** are shape-fragile but greppable — if upstream
-renames `fff.bun.ts`, `git am` fails loudly. **`versions.ts`** applies
-JSON edits semantically — resilient to reformatting, and re-emits the
-correct values on version bumps.
+renames a patched file or rewrites the anchor lines, `patch -p1` fails
+loudly. **`versions.ts`** applies edits semantically (JSON fields, TOML
+array entries) — resilient to reformatting, and re-emits the correct
+values on version bumps.
 
 ## Directory layout
 
@@ -37,14 +37,12 @@ opencode-bionic/                   ← this repo
 └── termux/
     ├── README.md                  ← this file
     ├── patches/                   ← quilt-style unified diffs
-    │   ├── 0001-termux-add-androidtui-to-minimumReleaseAgeExcludes.patch
-    │   ├── 0002-termux-add-build-termux.ts-compile-script.patch
-    │   └── 0003-termux-lazy-load-ff-labs-fff-bun.patch
+    │   ├── 0001-termux-2x-port.patch
     ├── ci/                        ← build pipeline
     │   ├── versions.ts            ← config-delta applier; canonical version parser
     │   ├── versions.sh            ← same, but sourceable by bash scripts
     │   ├── fetch-upstream.sh      ← clones anomalyco/opencode at a pinned tag
-    │   ├── apply-patches.sh       ← git am --3way termux/patches/*.patch
+    │   ├── apply-patches.sh       ← patch -p1 --forward termux/patches/*.patch
     │   ├── refresh-patches.sh     ← regenerates patches from a build tree
     │   ├── prepare-build-tree.sh  ← chains fetch + versions + apply
     │   ├── build-on-runner.sh     ← GitHub Actions entrypoint (spawns docker)
@@ -72,14 +70,18 @@ BUILD_DIR=/some/scratch/dir
 bash termux/ci/prepare-build-tree.sh "$BUILD_DIR"    # fetch + config + patches
 cd "$BUILD_DIR"
 bun install
-bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui   # produces the binary
+bun packages/cli/script/build.ts --target=opencode-linux-arm64 --skip-install --skip-web-ui   # → packages/cli/dist/cli-linux-arm64/bin/opencode
 ```
+
+`--target` selects by `targetName()` (`opencode-linux-arm64`), but the output
+directory is `name = target.replace("opencode", "cli")`, so the binary lands in
+`dist/cli-linux-arm64/`.
 
 `prepare-build-tree.sh` internally runs:
 
 1. `fetch-upstream.sh` — `git clone --depth 1 -b v$(jq .opencode versions.json) anomalyco/opencode`
 2. `bun termux/ci/versions.ts apply --target $BUILD_DIR` — apply config delta
-3. `apply-patches.sh` — `git am --3way termux/patches/*.patch`
+3. `apply-patches.sh` — `patch -p1 --forward termux/patches/*.patch`
 
 Any of those failing aborts loudly — no half-patched trees.
 
@@ -180,10 +182,10 @@ CI reads the same file; there is no other place versions are tracked.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `git am --3way` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
-| `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `build-termux.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
+| `patch -p1 --forward` fails at step 3 of `prepare-build-tree.sh` | Upstream renamed or refactored a file we patch | Run the refresh flow (see above) |
+| `opencode --version` reports `0.0.0-termux-ci` | `OPENCODE_VERSION` didn't reach `packages/cli/script/build.ts` | Verify `build-on-runner.sh` writes `$OUT_HOST/build-env.sh` and `build-in-container.sh` sources it |
 | `libopentui.so` extraction fails from bunfs | Native `.so` version drift, or the compiled binary shipped with the wrong `.so` | Bump `opentui.androidArm64Native` in `versions.json` and rebuild |
-| `Cannot find module '@ff-labs/fff-bun'` at runtime | Patch 0003 didn't apply | `git am --abort` in the build tree; re-run `apply-patches.sh` |
+| Ripgrep-style glob/grep slow or missing results | `@ff-labs/fff-bun`'s optional `@ff-labs/fff-bin-android-arm64` prebuilt didn't resolve for the pinned version | Confirm the runtime fell back to ripgrep (check `which rg`); not fatal |
 
 ## Design notes
 
@@ -199,7 +201,7 @@ programmatically in `versions.ts`.
 
 **Why put patches under `termux/patches/`?** Upstream itself uses
 top-level `patches/` for its own Bun patch files
-(`patches/@ff-labs%2Ffff-bun@0.9.3.patch` etc.). Nesting under `termux/`
+(`patches/@ff-labs%2Ffff-bun@0.10.5.patch` etc.). Nesting under `termux/`
 avoids the collision.
 
 **Why fetch upstream fresh instead of a git submodule?** Submodules add

@@ -8,8 +8,8 @@
 # The target dir must not exist (we clone fresh; refuse to overwrite).
 #
 # Uses `git clone --depth 1 -b vX.Y.Z` so we get the tagged commit and
-# nothing else. The clone is real git — `git am --3way` in apply-patches.sh
-# needs a repo, not a raw tree.
+# nothing else. The clone is real git — refresh-patches.sh regenerates our
+# patches from it with `git diff`.
 #
 # Env:
 #   OPENCODE_UPSTREAM_REF  build from this branch or commit instead of a

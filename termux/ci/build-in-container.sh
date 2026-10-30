@@ -51,7 +51,7 @@ echo "==========="
 echo "deb https://packages.termux.dev/apt/termux-main stable main" \
   > "${PREFIX:-/data/data/com.termux/files/usr}/etc/apt/sources.list"
 apt update -y
-apt install -y git python curl dpkg
+apt install -y git python curl dpkg rust zig
 
 # Install the bun-termux version pinned in versions.json, not whatever
 # /releases/latest happens to point at — the "latest" marker drifting to a
@@ -87,11 +87,11 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
-# OpenCode's terminal feature runs on bun-pty, whose npm prebuilt is
-# glibc-linked (libpthread.so.0) and cannot dlopen on Bionic. Overwrite the
-# npm artifact with the Bionic build published by bun-termux so the compiled
-# binary embeds a working library: bun-pty picks up its .so via a statically
-# analyzed require(), so whatever sits on disk here is what gets baked in.
+# Terminal sessions ride on bun-pty, whose npm prebuilt is glibc-linked
+# (libpthread.so.0) and cannot dlopen on Bionic. Overwrite the npm artifact
+# with the Bionic build published by bun-termux, matched to the bun-pty
+# version upstream pins: bun-pty picks its .so via a statically analyzed
+# require(), so this on-disk file is what the compiled binary embeds.
 BUN_PTY_VERSION="$(python3 -c \
   "import json;print(json.load(open('/workspace/versions.json'))['bunPty']['version'])")"
 BUN_PTY_URL="$(python3 -c \
@@ -119,6 +119,56 @@ then
 fi
 echo "→ bun-pty Bionic embedded: $BUN_PTY_DIR/librust_pty_arm64.so"
 
+# Persistent terminal daemon (@opencode-ai/pty). The official wheels cannot
+# run on Android: the gnu wheel links glibc, and the musl wheel hardcodes its
+# Unix socket under /tmp, which is read-only. bun-termux builds the daemon for
+# Bionic with the socket routed through OPENCODE_PTY_SOCKET_DIR/TMPDIR — this
+# embeds it into the compiled binary as the gnu wheel the resolver looks up.
+# The kernel execs it as a child process; its default runtime dir sits under
+# XDG_STATE_HOME, which Termux resolves to a writable path.
+if [ "${OPENCODE_EMBED_PTY:-1}" = "1" ]; then
+PTYD_VERSION="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['ptyService']['version'])")"
+PTYD_URL="$(python3 -c \
+  "import json;print(json.load(open('/workspace/versions.json'))['ptyService']['assetUrl'])")"
+PTYD_PKG="$BUILD_ROOT/node_modules/@opencode-ai/pty-linux-arm64-gnu"
+mkdir -p "$PTYD_PKG/bin"
+echo "→ fetching Bionic opencode-pty daemon $PTYD_VERSION"
+curl -fsSL -o "$PTYD_PKG/bin/opencode-pty" "$PTYD_URL"
+chmod 0755 "$PTYD_PKG/bin/opencode-pty"
+if ! python3 - "$PTYD_PKG/bin/opencode-pty" <<'PYELF'
+import struct, sys
+h = open(sys.argv[1], "rb").read(20)
+assert h[:4] == b"\x7fELF", "not an ELF"
+assert h[4] == 2, "not 64-bit"
+assert h[5] == 1, "not little-endian"
+machine = struct.unpack_from("<H", h, 18)[0]
+assert machine == 183, f"not AArch64 (e_machine={machine})"
+PYELF
+then
+  echo "error: pty daemon is not an aarch64 ELF" >&2
+  exit 1
+fi
+cat > "$PTYD_PKG/package.json" <<PKGJSON
+{
+  "name": "@opencode-ai/pty-linux-arm64-gnu",
+  "version": "$PTYD_VERSION",
+  "description": "OpenCode persistent PTY service for linux-arm64 (Bionic build)",
+  "license": "MIT",
+  "os": ["linux"],
+  "cpu": ["arm64"],
+  "exports": {
+    "./package.json": "./package.json",
+    "./bin/opencode-pty": "./bin/opencode-pty"
+  },
+  "files": ["bin"]
+}
+PKGJSON
+echo "→ pty daemon embedded: $PTYD_PKG/bin/opencode-pty"
+else
+  echo "→ skipping pty daemon embed (OPENCODE_EMBED_PTY=0); binding compiles to undefined"
+fi
+
 cd -
 
 OPENCODE_ROOT="$BUILD_ROOT" \
@@ -128,7 +178,7 @@ OPENCODE_VERSION="$OPENCODE_VERSION" \
 
 echo "=== POST-BUILD: publishing artifact ==="
 set -x
-BIN="$BUILD_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+BIN="$BUILD_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 test -f "$BIN"
 test -x "$BIN" || chmod +x "$BIN"
 ls -la "$BIN"

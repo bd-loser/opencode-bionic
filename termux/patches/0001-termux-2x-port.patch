@@ -1,0 +1,94 @@
+diff --git a/packages/cli/script/build.ts b/packages/cli/script/build.ts
+index 7f22183..2120aba 100755
+--- a/packages/cli/script/build.ts
++++ b/packages/cli/script/build.ts
+@@ -12,6 +12,33 @@ import { buildAppArchive } from "./app-assets"
+ import { verifyArtifact, verifySimulationGraph } from "./verify-artifact"
+ import { resolveOpencodePty } from "./opencode-pty"
+ 
++// opentuiAliasPlugin - remap bare @opentui/* imports to @androidtui/*.
++// Our fork publishes @androidtui/*; isolated linking does not propagate
++// the root catalog aliases into nested packages.
++const opentuiAliasPlugin: BunPlugin = {
++  name: "opentui-alias",
++  setup(build) {
++    const remap: Record<string, string> = {
++      "@opentui/keymap": "@androidtui/keymap",
++      "@opentui/solid": "@androidtui/solid",
++      "@opentui/core": "@androidtui/core",
++    }
++    build.onResolve({ filter: /^@opentui\// }, (args) => {
++      const importer = args.importer || ""
++      if (!/@androidtui[/+]opentui-/.test(importer)) return null
++      for (const [from, to] of Object.entries(remap)) {
++        if (args.path === from || args.path.startsWith(from + "/")) {
++          const rewritten = to + args.path.slice(from.length)
++          const resolved = Bun.resolveSync(rewritten, path.dirname(importer))
++          return { path: resolved }
++        }
++      }
++      return null
++    })
++  },
++}
++
++
+ const dir = path.resolve(import.meta.dirname, "..")
+ const binary = "opencode"
+ const outdir = path.resolve(
+@@ -108,12 +135,24 @@ const pluginRuntimePlugin: BunPlugin = {
+   },
+ }
+ 
++// Bionic: @opencode-ai/pty and @parcel/watcher publish no android binaries.
++// On Termux both loaders degrade at runtime (pty falls back to child_process,
++// watcher-binding's require throws and watcher.ts keeps polling); elsewhere a
++// failed pty resolution must stay a hard build error.
++const isTermux = process.platform === "android" || process.env.TERMUX_VERSION !== undefined
++
+ for (const item of targets) {
+-  const opencodePty = await resolveOpencodePty({
+-    platform: item.os,
+-    arch: item.arch,
+-    ...(item.os === "linux" ? { libc: item.abi ?? "glibc" } : {}),
+-  })
++  let opencodePty
++  try {
++    opencodePty = await resolveOpencodePty({
++      platform: item.os,
++      arch: item.arch,
++      ...(item.os === "linux" ? { libc: item.abi ?? "glibc" } : {}),
++    })
++  } catch (err) {
++    if (!isTermux) throw err
++    opencodePty = undefined
++  }
+   const opencodePtyPlugin: BunPlugin = {
+     name: "opencode-pty-binary",
+     setup(build) {
+@@ -141,7 +180,12 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     name: "parcel-watcher-binding",
+     setup(build) {
+       build.onLoad({ filter: /filesystem[/\\]watcher-binding\.ts$/ }, () => ({
+-        contents: `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
++        // Bionic has no @parcel/watcher prebuilt. A default export that
++        // throws when called keeps watcher-binding.ts's guarded-require
++        // shape, so watcher.ts falls back to polling like a missing dep.
++        contents: isTermux
++          ? `export default () => { throw new Error("opencode: @parcel/watcher has no android/bionic binding") }`
++          : `export default () => require(${JSON.stringify(parcelWatcherPackage)})`,
+         loader: "js",
+       }))
+     },
+@@ -164,9 +208,9 @@ export default { path: file, version: ${JSON.stringify(opencodePty.version)}, sh
+     external: ["node-gyp"],
+     format: "esm",
+     minify: true,
+-    bytecode: true,
++    bytecode: false,
+     sourcemap: Script.channel === "dev" || Script.channel === "local" ? "inline" : "none",
+-    splitting: true,
++    splitting: false,
+     compile: {
+       autoloadBunfig: false,
+       autoloadDotenv: false,

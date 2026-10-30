@@ -28,8 +28,8 @@ if [ ! -d "node_modules" ]; then
   fail "node_modules not found. Run: bash termux/clean-reinstall.sh"
 fi
 
-if [ ! -f "packages/opencode/script/build-termux.ts" ]; then
-  fail "Not in opencode root or patches not applied — build-termux.ts is missing."
+if [ ! -f "packages/cli/script/build.ts" ]; then
+  fail "Not in opencode root or patches not applied — build.ts is missing."
 fi
 
 # FFI requires the Bun launcher rather than the raw ELF.
@@ -46,20 +46,23 @@ echo "  BUN_BIN:       $BUN_BIN"
 echo "  BUN version:   $($BUN_BIN --version)"
 echo "=========================================="
 
-info "Running build-termux.ts..."
+info "Running script/build.ts..."
 
-cd "$OPENCODE_ROOT/packages/opencode"
+cd "$OPENCODE_ROOT/packages/cli"
 
 set +e
-"$BUN_BIN" run script/build-termux.ts
+# 2.2.0 moved target selection from argv to the OPENCODE_TARGET env (the argv
+# flag is ignored now, which would kick off all 12 platform builds and crash on
+# canary-bun baseline downloads):
+OPENCODE_TARGET=linux-arm64 "$BUN_BIN" run script/build.ts --skip-install --skip-web-ui
 BUILD_EXIT=$?
 set -e
 
 if [ "$BUILD_EXIT" -ne 0 ]; then
-  fail "build-termux.ts failed (exit $BUILD_EXIT)"
+  fail "script/build.ts failed (exit $BUILD_EXIT)"
 fi
 
-BINARY_PATH="$OPENCODE_ROOT/packages/opencode/dist/opencode-android-arm64/bin/opencode"
+BINARY_PATH="$OPENCODE_ROOT/packages/cli/dist/cli-linux-arm64/bin/opencode"
 
 if [ ! -f "$BINARY_PATH" ]; then
   fail "Binary not found at $BINARY_PATH"

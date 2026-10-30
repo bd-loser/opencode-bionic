@@ -115,11 +115,13 @@ for pkg in @opentui/solid @opentui/keymap solid-js effect yargs zod @androidtui/
   fi
 done
 
-# Optional on Android; absence is handled by the lazy-load patch.
+# @ff-labs/fff-bun declares android in os as of 0.10.5, so the JS package
+# installs; its optional fff-bin-android-arm64 prebuilt usually does not exist
+# for the pinned version, and the loader falls back to ripgrep at runtime.
 if [ -f "node_modules/@ff-labs/fff-bun/package.json" ]; then
-  ok "@ff-labs/fff-bun (unexpected on Termux — os restriction should skip it)"
+  ok "@ff-labs/fff-bun (JS shim present; native bin optional on Termux)"
 else
-  info "@ff-labs/fff-bun: NOT installed (expected on Android)"
+  info "@ff-labs/fff-bun: NOT installed (optional dep — ripgrep fallback)"
 fi
 
 SO_PATH="node_modules/@androidtui/core-android-arm64/libopentui.so"

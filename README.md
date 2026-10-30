@@ -6,8 +6,8 @@
 > two channels (stable and dev).
 
 <!-- versions:badges -->
-[![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core)
-[![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.5.17-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
+[![opentui-js](https://img.shields.io/badge/opentui--js-@androidtui%400.6.8-green.svg)](https://www.npmjs.com/package/@androidtui/core)
+[![opentui-so](https://img.shields.io/badge/libopentui.so-@androidtui%400.6.8-green.svg)](https://www.npmjs.com/package/@androidtui/core-android-arm64)
 <!-- /versions:badges -->
 
 ## Screenshots
@@ -127,11 +127,11 @@ release. The other channel lives on its own branch
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `1.19.4` |
-| `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.5.17` |
-| `@androidtui/core-android-arm64` (native `.so`) | `0.5.17` |
+| opencode (upstream) | `2.2.3` |
+| `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.6.8` |
+| `@androidtui/core-android-arm64` (native `.so`) | `0.6.8` |
 | `bun-termux` runtime | `1.4.4-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
-| `bun-pty` (Bionic pty `.so`, embedded) | `0.4.8` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.8)) |
+| `bun-pty` (Bionic pty `.so`, embedded) | `0.4.11` ([release asset](https://github.com/bd-loser/bun-termux/releases/tag/bun-pty-v0.4.11)) |
 
 <!-- /versions:table -->
 
