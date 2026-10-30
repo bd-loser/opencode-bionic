@@ -42,10 +42,11 @@ jobs:
         run: |
           set -euo pipefail
           REPO="$GITHUB_REPOSITORY"
-          rm -rf pool && mkdir -p pool/stable pool/dev
+          rm -rf pool && mkdir -p pool/stable pool/v1 pool/dev
           gh api "repos/$REPO/releases?per_page=100" --paginate > releases.json
           latest() { jq -r "$1" releases.json | head -1; }
           STABLE_TAG="$(latest '[.[] | select(.draft==false and .prerelease==false and (.tag_name|test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")))] | .[0].tag_name')"
+          V1_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-v1.")))] | .[0].tag_name')"
           DEV_TAG="$(latest '[.[] | select(.draft==false and .prerelease==true and (.tag_name|contains("-dev.")))] | .[0].tag_name')"
           echo "stable=$STABLE_TAG dev=$DEV_TAG"
           dl() {
@@ -53,6 +54,7 @@ jobs:
             gh release download "$1" -R "$REPO" -p '*.deb' -D "pool/$2/" --clobber
           }
           dl "$STABLE_TAG" stable
+          dl "$V1_TAG" v1
           dl "$DEV_TAG" dev
           find pool -type f | sort
 
@@ -63,7 +65,7 @@ jobs:
           cp -r pool repo/pool
           gpg --armor --export > repo/opencode-bionic.asc
           gpg --armor --export | gpg --dearmor > repo/opencode-bionic.gpg
-          for ch in stable dev; do
+          for ch in stable v1 dev; do
             D=repo/dists/$ch
             if [ -z "$(ls -A pool/$ch 2>/dev/null)" ]; then echo "channel $ch: no packages, skipping suite"; continue; fi
             mkdir -p "$D/main/binary-aarch64"
@@ -85,7 +87,8 @@ jobs:
           import glob, html, os, time
           REPO = os.environ["GITHUB_REPOSITORY"]
           SUITES = [
-              ("stable", "Default line. Mirrors upstream release tags."),
+              ("stable", "Default line. Newest upstream stable release."),
+              ("v1", "Legacy 1.x line, newest upstream 1.x release."),
               ("dev", "Upstream dev branch, first build per version."),
           ]
           rows = []
@@ -128,7 +131,7 @@ jobs:
               ".card{border:1px solid #2b3240;border-radius:12px;padding:1rem 1.2rem;margin:1rem 0;background:#0f141b}",
               ".head{display:flex;gap:.7rem;align-items:center;margin-bottom:.3rem}",
               ".ch{font-weight:700;padding:.15rem .6rem;border-radius:99px;font-size:.8rem}",
-              ".ch.stable{background:#1a3d2a;color:#5ad19c}.ch.dev{background:#152a44;color:#6ea8fe}",
+              ".ch.stable{background:#1a3d2a;color:#5ad19c}.ch.v1{background:#3a2a44;color:#c08af0}.ch.dev{background:#152a44;color:#6ea8fe}",
               ".ver{font-weight:600}p{margin:.4rem 0}.blurb{color:#aeb7c4;font-size:.92rem}",
               ".alt{color:#9aa4b2;font-size:.85rem}.alt code{font-size:.95em}",
               "footer{margin-top:2rem;color:#8a94a3;font-size:.85rem}",
