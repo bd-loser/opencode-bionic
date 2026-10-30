@@ -26,13 +26,19 @@ anything.
 
 Pick a line, paste one command inside Termux:
 
-**Stable** *(1.x — default)* — copy, paste, run:
+**Stable** *(newest upstream release — default, recommended)* — copy, paste, run:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | bash
 ```
 
-**Dev** *(2.x — recommended for v2)*:
+**v1** *(legacy 1.x line)*:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=v1 bash
+```
+
+**Dev** *(bleeding edge)*:
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/repo-setup.sh | OPENCODE_CHANNEL=dev bash
@@ -51,9 +57,9 @@ echo "deb [arch=aarch64] https://bd-loser.github.io/opencode-bionic stable main"
 pkg update && pkg install opencode
 ```
 
-To switch lines — say, 1.x to v2 — rerun the one-liner for the other line
+To switch lines — say, stable to v1 — rerun the one-liner for the other line
 (it rewrites the sources entry and installs across downgrades), or edit the
-suite (`stable`/`dev`) in
+suite (`stable`/`v1`/`dev`) in
 `$PREFIX/etc/apt/sources.list.d/opencode-bionic.list` yourself. The package
 is `opencode` on every line.
 
@@ -65,11 +71,13 @@ version:
 
 | Channel | Tracks | Releases |
 |---|---|---|
-| **stable** *(default)* | upstream release tags | [tags](https://github.com/bd-loser/opencode-bionic/releases) |
+| **stable** *(default)* | newest upstream release (now 2.x) | [tags](https://github.com/bd-loser/opencode-bionic/releases) |
+| **v1** | newest upstream 1.x release | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
 | **dev** | upstream `dev` branch | [prereleases](https://github.com/bd-loser/opencode-bionic/releases?q=prerelease%3Atrue&expanded=true) |
 
-New to opencode, or on 1.x and curious about v2? **v2 ships on the dev line
-— that is the recommended start.** Live package index:
+**stable tracks whatever upstream tags newest — currently the 2.x line — so it is
+the recommended start.** Still on 1.x? The **v1** channel keeps shipping 1.x
+releases. Live package index:
 [bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/).
 
 ## How it compares
@@ -82,7 +90,7 @@ is different here:
 | | opencode-bionic | Hope2333/opencode-termux | guysoft/opencode-termux |
 |---|---|---|---|
 | libc | native Bionic | native Bionic | native Bionic |
-| release lines | stable + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
+| release lines | stable + v1 + dev, built automatically from upstream | v1 + v2 | v1 + v2 side-by-side |
 | dev freshness | tracks upstream commits hourly | — | — |
 | terminal sessions (PTY) | works, bun-pty rebuilt for Bionic | — | — |
 | what you install | one self-contained .deb | one of five package families | package + wrapper + libs |
