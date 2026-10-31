@@ -135,7 +135,7 @@ release. The other channel lives on its own branch
 <!-- versions:table -->
 | Component | Version |
 |---|---|
-| opencode (upstream) | `2.2.4` |
+| opencode (upstream) | `2.2.5` |
 | `@opentui/{core,keymap,solid}` (JS, via `@androidtui`) | `0.8.0` |
 | `@androidtui/core-android-arm64` (native `.so`) | `0.8.0` |
 | `bun-termux` runtime | `1.4.4-patched` ([bd-loser/bun-termux](https://github.com/bd-loser/bun-termux)) |
