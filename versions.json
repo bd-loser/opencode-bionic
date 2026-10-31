@@ -1,6 +1,6 @@
 {
   "$schema": "./versions.schema.json",
-  "opencode": "2.2.4",
+  "opencode": "2.2.5",
   "opentui": {
     "core": "0.6.8",
     "keymap": "0.6.8",
