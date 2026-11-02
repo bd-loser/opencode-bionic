@@ -157,7 +157,10 @@ jobs:
               VER="$(probe_version "$SHA")"
               [ -n "$VER" ] || { echo "error: cannot determine version at $SHA" >&2; exit 1; }
             fi
-            [ "$CHANNEL" = "stable" ] || { [ -n "$VERSION_IN" ] || PRE=true; }
+            # Every non-stable line is a prerelease. Never let a forced
+            # version (e.g. a side build) publish as a normal release: that
+            # would hijack /releases/latest.
+            [ "$CHANNEL" = "stable" ] || PRE=true
             case "$CHANNEL" in stable) KIT="main";; v1) KIT="v1";; dev) KIT="dev";; esac
             # Rolling lines must leave version empty: the build job derives
             # `<ver>-<channel>.<sha8>` from the ref. A leaked probe version
@@ -361,6 +364,9 @@ jobs:
           OPENCODE_VERSION: ${{ steps.version.outputs.release }}
           OPENCODE_UPSTREAM_REF: ${{ steps.version.outputs.ref }}
           OPENCODE_CHANNEL: ${{ steps.version.outputs.channel }}
+          # stable and v1 ship the embedded web UI; dev stays lean (it
+          # rebuilds hourly, so +25 MB per rolling download is not worth it).
+          OPENCODE_WEB_UI: ${{ (steps.version.outputs.channel == 'stable' || steps.version.outputs.channel == 'v1') && '1' || '0' }}
         run: bash termux/ci/build-on-runner.sh
 
       - name: Package .deb
@@ -439,7 +445,10 @@ jobs:
           set -eu
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch -q origin "$CHANNEL"
+          if ! git fetch -q origin "$CHANNEL" 2>/dev/null; then
+            echo "no branch '$CHANNEL' to update — skipping pin update"
+            exit 0
+          fi
           git reset -q --hard "origin/$CHANNEL"
           CUR="$(jq -r .opencode versions.json)"
           if [ "$CUR" != "$PKGVER" ]; then
