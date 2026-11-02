@@ -80,6 +80,12 @@ the recommended start.** Still on 1.x? The **v1** channel keeps shipping 1.x
 releases. Live package index:
 [bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/).
 
+### Web UI
+
+The `dev` channel is built **without** the embedded web UI — it rebuilds hourly,
+so the extra ~25 MB is not worth it on every rolling download. `stable` and `v1`
+ship it; use one of those if you want the browser UI.
+
 ## How it compares
 
 [Hope2333/opencode-termux](https://github.com/Hope2333/opencode-termux) and
