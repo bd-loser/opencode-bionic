@@ -71,14 +71,6 @@ use `install.sh` with `OPENCODE_VERSION`, or grab the `.deb` from that
 release's assets (`releases/download/v<ver>/`); the recipe is in the
 [FAQ](#faq).
 
-Each apt line only ever carries the **newest** build on that line — apt
-downloads a `.deb` from `pool/<line>/` (rebuilt from the newest release on
-every publish), so `pkg install opencode=<old version>` won't work and there
-is nothing older to downgrade to. To install or pin a specific/older build,
-use `install.sh` with `OPENCODE_VERSION`, or grab the `.deb` from that
-release's assets (`releases/download/v<ver>/`); the recipe is in the
-[FAQ](#faq).
-
 ### Channels
 
 All lines build automatically from upstream — an hourly watcher mirrors
@@ -192,22 +184,6 @@ see <a href="https://opencode.ai/docs">opencode.ai/docs</a>.
 Automatically, within about an hour: upstream stable and dev activity each
 trigger a matching build here (one release per upstream version).
 See <a href="#channels">Channels</a>.
-</details>
-
-<details>
-<summary><b>How do I install an older or specific version?</b></summary>
-
-apt can't do it — each line's pool keeps only the newest build. Use the
-release installer with an explicit version, or the `.deb` from the release:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/bd-loser/opencode-bionic/main/install.sh \
-  | OPENCODE_VERSION=2.2.4 bash
-```
-
-Both verify before installing (`SHA256SUMS`/`sha256sum -c`). Note that apt
-will then see a newer build and `pkg upgrade opencode` will move you back to
-the newest one.
 </details>
 
 <details>
