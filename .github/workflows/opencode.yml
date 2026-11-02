@@ -430,6 +430,15 @@ jobs:
               && [ "$(printf '%s\n%s\n' "$NEWEST" "$VERSION" | sort -V | tail -1)" = "$NEWEST" ]; then
               FLAGS="$FLAGS --latest=false"
               echo "→ $VERSION is older than $NEWEST: publishing without the Latest badge"
+              # The install one-liners below track the newest stable, so say
+              # plainly how to get this exact version instead.
+              {
+                printf '> **Backfill release.** `v%s` is older than the current stable `v%s`.\n' "$VERSION" "$NEWEST"
+                printf '> The installer and apt resolve to the newest stable; to pin this exact\n'
+                printf '> version, grab the `.deb` below or use `OPENCODE_VERSION=%s`.\n\n' "$VERSION"
+                cat "$NOTES"
+              } > "$NOTES.tmp"
+              mv "$NOTES.tmp" "$NOTES"
             fi
           fi
           # shellcheck disable=SC2086
