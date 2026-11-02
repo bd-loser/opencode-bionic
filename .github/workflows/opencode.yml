@@ -419,6 +419,19 @@ jobs:
           } > "$NOTES"
           TITLE="v$RELEASE"
           [ "$CHANNEL" != "stable" ] && TITLE="$TITLE ($CHANNEL)"
+          # Backfilling an older stable version must not steal the "Latest"
+          # badge from a newer release: publishing always makes a release the
+          # most recent one, so pin latest only when this is the newest vX.Y.Z.
+          if [ "$CHANNEL" = "stable" ] && [ "$PRERELEASE" != "true" ]; then
+            NEWEST="$(gh release list --exclude-pre-releases --limit 100 \
+              --json tagName --jq '.[].tagName' 2>/dev/null \
+              | sed -n 's/^v\([0-9]*\.[0-9]*\.[0-9]*\)$/\1/p' | sort -V | tail -1 || true)"
+            if [ -n "$NEWEST" ] && [ "$NEWEST" != "$VERSION" ] \
+              && [ "$(printf '%s\n%s\n' "$NEWEST" "$VERSION" | sort -V | tail -1)" = "$NEWEST" ]; then
+              FLAGS="$FLAGS --latest=false"
+              echo "→ $VERSION is older than $NEWEST: publishing without the Latest badge"
+            fi
+          fi
           # shellcheck disable=SC2086
           gh release create "$TAG" $FLAGS \
             --title "$TITLE" \
