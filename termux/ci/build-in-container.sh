@@ -109,6 +109,39 @@ if [ "${OPENCODE_WEB_UI:-0}" = "1" ]; then
     FIXED=$((FIXED+1))
   done < <(find "$BUILD_ROOT" \( -type f -o -type l \) -path '*/node_modules/.bin/*' 2>/dev/null)
   echo "→ rewrote $FIXED node-shebang bin(s) under node_modules/.bin"
+
+  # lightningcss (Vite's CSS engine, pulled in by Tailwind v4) ships prebuilt
+  # napi binaries per platform. `lightningcss-android-arm64` only exists from
+  # 1.30.2 on, while the app pins 1.30.1, so loading the vite config dies with
+  # "Cannot find module '../lightningcss.android-arm64.node'". Drop in the
+  # closest published android build — the binding surface is unchanged across
+  # patch releases.
+  LC_TMP="$(mktemp -d)"
+  while IFS= read -r lc_pkg; do
+    lc_dir="$(dirname "$lc_pkg")"
+    [ -f "$lc_dir/lightningcss.android-arm64.node" ] && continue
+    lc_ver="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' "$lc_pkg")"
+    lc_pick="$(python3 - "$lc_ver" <<'PY'
+import json, sys, urllib.request
+installed = sys.argv[1]
+def meta(spec):
+    url = "https://registry.npmjs.org/lightningcss-android-arm64/" + spec
+    with urllib.request.urlopen(url, timeout=60) as r:
+        return json.load(r)
+try:
+    d = meta(installed)
+except Exception:
+    d = meta("latest")
+print(d["version"] + " " + d["dist"]["tarball"])
+PY
+)"
+    lc_use="${lc_pick%% *}"; lc_url="${lc_pick#* }"
+    echo "  lightningcss: lightningcss@$lc_ver -> android-arm64 $lc_use"
+    curl -fsSL --retry 3 --connect-timeout 15 --max-time 300 -o "$LC_TMP/lc.tgz" "$lc_url"
+    tar xzf "$LC_TMP/lc.tgz" -C "$LC_TMP"
+    cp "$LC_TMP/package/lightningcss.android-arm64.node" "$lc_dir/"
+  done < <(find "$BUILD_ROOT" -type f -path '*/node_modules/lightningcss/package.json' 2>/dev/null)
+  rm -rf "$LC_TMP"
 fi
 
 # Terminal sessions ride on bun-pty, whose npm prebuilt is glibc-linked
