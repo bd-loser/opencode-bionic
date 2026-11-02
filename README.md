@@ -80,6 +80,21 @@ the recommended start.** Still on 1.x? The **v1** channel keeps shipping 1.x
 releases. Live package index:
 [bd-loser.github.io/opencode-bionic](https://bd-loser.github.io/opencode-bionic/).
 
+### Web UI
+
+`stable` and `v1` embed the web UI in the binary, so it works offline out of the
+box:
+
+```bash
+opencode serve     # prints the URL and a password
+opencode pair      # or: one-time link that authenticates the browser for you
+```
+
+Open the printed `http://127.0.0.1:<port>` in any browser on the device — it is
+a PWA, so "Add to home screen" gives you an app icon. Embedding it costs about
+25 MB (binary 172 → 197 MB); the `dev` channel skips it to keep the hourly
+rolling downloads small.
+
 ## How it compares
 
 [Hope2333/opencode-termux](https://github.com/Hope2333/opencode-termux) and
