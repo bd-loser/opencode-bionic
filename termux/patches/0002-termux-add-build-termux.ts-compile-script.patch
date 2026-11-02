@@ -1,20 +1,25 @@
-From 113527d359d297ea9e59c4feb5f272f3fbb40441 Mon Sep 17 00:00:00 2001
+From 1dbe4b82aae21298183dce1f808107d16e60b43f Mon Sep 17 00:00:00 2001
 From: opencode-bionic <bionic@build.local>
-Date: Sun, 19 Jul 2026 16:59:04 +0600
+Date: Mon, 2 Nov 2026 20:09:30 +0600
 Subject: [PATCH 2/3] termux: add build-termux.ts compile script
 
 Targets Android arm64 and reuses the current patched Bun runtime.
+
+Also embeds the web UI: upstream's script/build.ts builds packages/app and
+hands Bun a generated file map, but this custom script skipped it, so
+`opencode serve` proxied https://app.opencode.ai instead of serving the app
+that ships with this version. Set OPENCODE_WEB_UI=0 to skip it again.
 ---
- packages/opencode/script/build-termux.ts | 152 +++++++++++++++++++++++
- 1 file changed, 152 insertions(+)
+ packages/opencode/script/build-termux.ts | 204 +++++++++++++++++++++++
+ 1 file changed, 204 insertions(+)
  create mode 100644 packages/opencode/script/build-termux.ts
 
 diff --git a/packages/opencode/script/build-termux.ts b/packages/opencode/script/build-termux.ts
 new file mode 100644
-index 0000000..f5ad162
+index 0000000..dab7014
 --- /dev/null
 +++ b/packages/opencode/script/build-termux.ts
-@@ -0,0 +1,157 @@
+@@ -0,0 +1,204 @@
 +#!/usr/bin/env bun
 +// build-termux.ts — compile opencode into a single binary for Termux/Android
 +// Uses the matching target so Bun embeds the current patched runtime.
@@ -35,6 +40,13 @@ index 0000000..f5ad162
 +import pkg from "../package.json"
 +
 +const sourcemapsFlag = process.argv.includes("--sourcemaps")
++// The web UI is a Vite build of packages/app that gets embedded into the
++// binary as a file map. Upstream builds it by default; the kit keeps that
++// default and lets CI opt out with OPENCODE_WEB_UI=0 (dev stays lean).
++// Without it, src/server/shared/ui.ts falls back to proxying
++// https://app.opencode.ai, so the UI needs network and served assets are
++// not the ones built for this version.
++const skipEmbedWebUi = process.argv.includes("--skip-embed-web-ui") || process.env.OPENCODE_WEB_UI === "0"
 +const plugin = createSolidTransformPlugin()
 +
 +// opentuiAliasPlugin — remap bare @opentui/* imports to @androidtui/*.
@@ -64,6 +76,35 @@ index 0000000..f5ad162
 +  },
 +}
 +
++// Mirrors upstream script/build.ts: build the app, then hand Bun a generated
++// module that imports every dist file with { type: "file" } and maps request
++// paths to the embedded asset.
++const createEmbeddedWebUIBundle = async () => {
++  console.log("Building Web UI to embed in the binary")
++  const appDir = path.resolve(__dirname, "../../app")
++  const dist = path.join(appDir, "dist")
++  await $`OPENCODE_CHANNEL=${Script.channel} bun run --cwd ${appDir} build`
++  const files = (await Array.fromAsync(new Bun.Glob("**/*").scan({ cwd: dist })))
++    .map((file) => file.replaceAll("\\", "/"))
++    .filter((file) => !file.endsWith(".map"))
++    .sort()
++  const imports = files.map((file, i) => {
++    const spec = path.relative(dir, path.join(dist, file)).replaceAll("\\", "/")
++    return `import file_${i} from ${JSON.stringify(spec.startsWith(".") ? spec : `./${spec}`)} with { type: "file" };`
++  })
++  const entries = files.map((file, i) => `  ${JSON.stringify(file)}: file_${i},`)
++  return [
++    `// Import all files as file_$i with type: "file"`,
++    ...imports,
++    `// Export with original mappings`,
++    `export default {`,
++    ...entries,
++    `}`,
++  ].join("\n")
++}
++
++const embeddedFileMap = skipEmbedWebUi ? null : await createEmbeddedWebUIBundle()
++
 +console.log("==========================================")
 +console.log("Building opencode for Termux/Android arm64")
 +console.log("==========================================")
@@ -71,6 +112,7 @@ index 0000000..f5ad162
 +console.log(`  bun version:      ${Bun.version}`)
 +console.log(`  platform:         ${process.platform}-${process.arch}`)
 +console.log(`  sourcemaps:       ${sourcemapsFlag}`)
++console.log(`  web ui:           ${skipEmbedWebUi ? "skipped" : "embedded"}`)
 +console.log("==========================================")
 +
 +// Embed opentui's tree-sitter worker.
@@ -116,7 +158,17 @@ index 0000000..f5ad162
 +    outfile: `dist/${name}/bin/opencode`,
 +    execArgv: [`--user-agent=opencode/${Script.version}`, "--use-system-ca", "--"],
 +  },
-+  entrypoints: ["./src/index.ts", parserWorker, workerPath],
++  entrypoints: [
++    "./src/index.ts",
++    parserWorker,
++    workerPath,
++    ...(embeddedFileMap ? ["opencode-web-ui.gen.ts"] : []),
++  ],
++  // Virtual entry consumed by src/server/shared/ui.ts via
++  // import("opencode-web-ui.gen.ts"); Bun inlines the file map here.
++  files: {
++    ...(embeddedFileMap ? { "opencode-web-ui.gen.ts": embeddedFileMap } : {}),
++  },
 +  define: {
 +    // Bionic is neither glibc nor musl; fff-bun is disabled on Android.
 +    FFF_LIBC: JSON.stringify("gnu"),
@@ -172,5 +224,6 @@ index 0000000..f5ad162
 +console.log(`Binary: dist/${name}/bin/opencode`)
 +console.log(`Size:   ${(fs.statSync(binaryPath).size / 1024 / 1024).toFixed(1)} MB`)
 +console.log(`\nInstall:`)
-+console.log(`  cp dist/${name}/bin/opencode $PREFIX/bin/opencode`)
-+console.log(`  chmod +x $PREFIX/bin/opencode`)
+-- 
+2.56.0
+

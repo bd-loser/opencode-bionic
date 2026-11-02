@@ -87,6 +87,30 @@ bash /workspace/termux/ci/prepare-build-tree.sh "${FETCH_ARGS[@]}"
 cd "$BUILD_ROOT"
 bun install
 
+# The embedded web UI (`vite build` in packages/app) runs through node-shebang
+# bins under node_modules/.bin (`#!/usr/bin/env node`). The container has no
+# node, Termux has no /usr/bin/env, and the build user cannot create one
+# (root-owned /usr). Install node, then rewrite the bins the app build invokes
+# into Termux-bash wrappers that exec node directly.
+if [ "${OPENCODE_WEB_UI:-0}" = "1" ]; then
+  apt install -y nodejs-lts
+  node --version || { echo "error: node missing after nodejs-lts install" >&2; exit 1; }
+  NODE_BIN="${PREFIX:-/data/data/com.termux/files/usr}/bin/node"
+  FIXED=0
+  while IFS= read -r bin; do
+    # .bin entries are usually symlinks; read the resolved target's shebang.
+    target="$(readlink -f "$bin" 2>/dev/null || echo "$bin")"
+    head -1 "$target" 2>/dev/null | grep -qE '^#!/usr/bin/(env +)?node' || continue
+    printf '#!%s/bin/bash\nexec "%s" "%s" "$@"\n' \
+      "${PREFIX:-/data/data/com.termux/files/usr}" "$NODE_BIN" "$target" > "$bin.tmp.$$"
+    chmod +x "$bin.tmp.$$"
+    rm -f "$bin"
+    mv "$bin.tmp.$$" "$bin"
+    FIXED=$((FIXED+1))
+  done < <(find "$BUILD_ROOT" \( -type f -o -type l \) -path '*/node_modules/.bin/*' 2>/dev/null)
+  echo "→ rewrote $FIXED node-shebang bin(s) under node_modules/.bin"
+fi
+
 # OpenCode's terminal feature runs on bun-pty, whose npm prebuilt is
 # glibc-linked (libpthread.so.0) and cannot dlopen on Bionic. Overwrite the
 # npm artifact with the Bionic build published by bun-termux so the compiled
