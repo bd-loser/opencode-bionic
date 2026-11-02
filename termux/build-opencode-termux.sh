@@ -54,7 +54,17 @@ set +e
 # 2.2.0 moved target selection from argv to the OPENCODE_TARGET env (the argv
 # flag is ignored now, which would kick off all 12 platform builds and crash on
 # canary-bun baseline downloads):
-OPENCODE_TARGET=linux-arm64 "$BUN_BIN" run script/build.ts --skip-install --skip-web-ui
+# The embedded web UI is a Vite build of packages/app, embedded as a brotli
+# archive. It costs ~14s of build time and ~25 MB of binary size, so the
+# channel decides: stable/v1 ship it (OPENCODE_WEB_UI=1), dev skips it.
+WEB_UI_FLAG="--skip-web-ui"
+if [ "${OPENCODE_WEB_UI:-0}" = "1" ]; then
+  WEB_UI_FLAG=""
+  info "web UI: enabled (packages/app is built and embedded)"
+else
+  info "web UI: skipped (no embedded app; \`opencode serve\` will 404 on /)"
+fi
+OPENCODE_TARGET=linux-arm64 "$BUN_BIN" run script/build.ts --skip-install $WEB_UI_FLAG
 BUILD_EXIT=$?
 set -e
 
