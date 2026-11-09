@@ -3,6 +3,7 @@
 import fnmatch
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import shutil
@@ -26,6 +27,8 @@ def validate(path, package):
 
 
 def main():
+    # Termux may use umask 077; package payloads must remain readable.
+    os.umask(0o022)
     projects = json.loads(Path(__file__).with_name('projects.json').read_text())
     names = set()
     with tempfile.TemporaryDirectory(prefix='termux-packages-') as scratch:
