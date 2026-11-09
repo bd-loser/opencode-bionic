@@ -1,10 +1,15 @@
 #!/data/data/com.termux/files/usr/bin/sh
 # One-command setup for the bd-loser/opencode-bionic Termux repository.
-# Adds the signing key + sources entry, updates, installs opencode.
+# Adds the signing key + sources entry, updates, installs the selected package.
+#   TERMUX_PACKAGE=opencode|camoufox|obscura (default: opencode)
 #   OPENCODE_CHANNEL=stable|v1|dev   (default: stable; legacy "beta" maps to dev)
 set -eu
 BASE="https://bd-loser.github.io/opencode-bionic"
 CH="${OPENCODE_CHANNEL:-stable}"
+PACKAGE="${TERMUX_PACKAGE:-opencode}"
+case "$PACKAGE" in
+  *[!a-z0-9+.-]*|'') echo "Invalid TERMUX_PACKAGE" >&2; exit 1 ;;
+esac
 case "$CH" in
   stable|v1|dev) ;;
   beta) echo "note: the beta channel was retired (upstream removed its beta branch); using dev." >&2; CH=dev ;;
@@ -20,9 +25,9 @@ curl -fsSL --connect-timeout 10 --max-time 60 "$BASE/opencode-bionic.gpg" \
   || { echo "Could not fetch the signing key — check your connection and retry." >&2; exit 1; }
 echo "deb [arch=aarch64] $BASE $CH main" > "$PREFIX/etc/apt/sources.list.d/opencode-bionic.list"
 pkg update -y
-if pkg install -y --allow-downgrades opencode; then
-  echo "Installed. pkg upgrade opencode keeps you current; rerun with OPENCODE_CHANNEL=dev to switch lines."
+if pkg install -y --allow-downgrades "$PACKAGE"; then
+  echo "Installed. pkg upgrade $PACKAGE keeps you current; rerun with OPENCODE_CHANNEL=dev to switch lines."
 else
-  echo "pkg install opencode failed - run it manually to see the error" >&2
+  echo "pkg install $PACKAGE failed - run it manually to see the error" >&2
   exit 1
 fi

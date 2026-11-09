@@ -22,6 +22,18 @@ Native TUI, rendered on-device — no proot, no VNC, no WebView:
 Free models are in the picker too — you can start coding without paying for
 anything.
 
+## Shared Termux packages
+
+This signed APT repository also provides **Camoufox** and **Obscura Termux**. After configuring it, run:
+
+```sh
+pkg update
+pkg install obscura
+# Or: pkg install camoufox
+```
+
+For setup instructions and adding future projects, see the [shared package repository guide](termux/repository/README.md). OpenCode channels remain available as before.
+
 ## Install
 
 Pick a line, paste one command inside Termux:

@@ -23,6 +23,8 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/checkout@v4
+
       - name: Install apt repo tooling
         run: |
           sudo apt-get update -qq
@@ -58,6 +60,11 @@ jobs:
           dl "$DEV_TAG" dev
           find pool -type f | sort
 
+      - name: Stage shared project packages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 termux/repository/stage-projects.py
+
       - name: Build signed apt tree + channel index
         run: |
           set -euo pipefail
@@ -78,13 +85,13 @@ jobs:
               -o "APT::FTPArchive::Release::Codename=$ch" \
               -o "APT::FTPArchive::Release::Architectures=aarch64" \
               -o "APT::FTPArchive::Release::Components=main" \
-              -o "APT::FTPArchive::Release::Description=OpenCode for Termux (Bionic aarch64), channel $ch" \
+              -o "APT::FTPArchive::Release::Description=Native Termux packages (Bionic aarch64), channel $ch" \
               release "$D" > "$D/Release"
             gpg --batch --yes --clearsign --output "$D/InRelease" "$D/Release"
             gpg --batch --yes --armor --detach-sign --output "$D/Release.gpg" "$D/Release"
           done
           python3 - <<'PY'
-          import glob, html, os, time
+          import glob, html, os, time, subprocess
           REPO = os.environ["GITHUB_REPOSITORY"]
           SUITES = [
               ("stable", "Default line. Newest upstream stable release."),
@@ -96,33 +103,36 @@ jobs:
               debs = glob.glob("pool/%s/*.deb" % ch)
               if not debs:
                   continue
-              ver = os.path.basename(debs[0]).split("_")[1]
-              rows.append((ch, ver))
+              for deb in sorted(debs):
+                  name = subprocess.check_output(["dpkg-deb", "-f", deb, "Package"], text=True).strip()
+                  ver = subprocess.check_output(["dpkg-deb", "-f", deb, "Version"], text=True).strip()
+                  rows.append((ch, name, ver, blurb))
           now = time.strftime("%Y-%m-%d %H:%M:%S UTC", time.gmtime())
           base_url = "https://bd-loser.github.io/opencode-bionic"
           setup_base = "https://raw.githubusercontent.com/%s/main/repo-setup.sh" % REPO
           cards = []
-          for ch, ver in rows:
-              setup = "curl -fsSL %s | bash" % setup_base
+          for ch, name, ver, blurb in rows:
+              setup = "curl -fsSL %s | TERMUX_PACKAGE=%s bash" % (setup_base, name)
               if ch != "stable":
-                  setup = "curl -fsSL %s | OPENCODE_CHANNEL=%s bash" % (setup_base, ch)
-              tag = "v" + ver
-              rel = "https://github.com/%s/releases/tag/%s" % (REPO, tag)
+                  setup = "curl -fsSL %s | OPENCODE_CHANNEL=%s TERMUX_PACKAGE=%s bash" % (setup_base, ch, name)
+              tag = name
+              blurb = blurb if name == "opencode" else "Same native package in every OpenCode channel."
+              rel = "https://github.com/%s/releases" % ({"camoufox": "bd-loser/camoufox-termux", "obscura": "bd-loser/obscura-termux"}.get(name, REPO))
               cards.append(
                   '<div class="card"><div class="head"><span class="ch %s">%s</span>'
-                  '<span class="ver">opencode %s</span></div>'
+                  '<span class="ver">%s %s</span></div>'
                   '<p class="blurb">%s</p>'
                   "<pre><code>%s</code></pre>"
                   '<p class="alt">apt line: <code>deb [arch=aarch64] %s %s main</code> &middot; '
                   '<a href="%s">release %s</a></p></div>'
-                  % (ch, ch, html.escape(ver), html.escape(blurb), html.escape(setup),
+                  % (ch, ch, html.escape(name), html.escape(ver), html.escape(blurb), html.escape(setup),
                      base_url, ch, rel, html.escape(tag))
               )
           bg = '"'.join(["", ""]) or ""
           page = "".join([
               '<!doctype html><html lang="en"><head><meta charset="utf-8">',
               '<meta name="viewport" content="width=device-width,initial-scale=1">',
-              "<title>opencode for Termux - package repository</title>",
+              "<title>Termux packages - OpenCode, Camoufox and Obscura</title>",
               "<style>",
               "body{background:#0d1117;color:#d8dee6;font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:2rem 1rem;line-height:1.5}",
               "a{color:#6ea8fe}",
@@ -136,10 +146,10 @@ jobs:
               ".alt{color:#9aa4b2;font-size:.85rem}.alt code{font-size:.95em}",
               "footer{margin-top:2rem;color:#8a94a3;font-size:.85rem}",
               "</style></head><body>",
-              "<h1>opencode for Termux</h1>",
+              "<h1>Native Termux packages</h1>",
               '<p>Signed apt repository for <a href="https://github.com/%s">%s</a> &#8212; '
-              "native Bionic builds of <a href=\"https://opencode.ai\">opencode</a>. "
-              "Add a channel, then <code>pkg upgrade opencode</code> keeps it current.</p>"
+              "native Bionic builds of OpenCode, Camoufox and Obscura. "
+              "Add a channel, then install packages with <code>pkg install obscura</code> or <code>pkg install camoufox</code>.</p>"
               % (REPO, REPO),
               "".join(cards),
               "<footer>Regenerated and re-signed automatically after every release &#183; %s UTC<br>"

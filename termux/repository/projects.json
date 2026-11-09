@@ -1,0 +1,20 @@
+[
+  {
+    "package": "camoufox",
+    "repository": "bd-loser/camoufox-termux",
+    "release": "bionic-latest",
+    "format": "deb",
+    "asset": "camoufox-*-aarch64.deb"
+  },
+  {
+    "package": "obscura",
+    "repository": "bd-loser/obscura-termux",
+    "release": "v0.2.6",
+    "format": "binary-tar",
+    "asset": "obscura-termux-v0.2.6-aarch64.tar.gz",
+    "sha256": "23be86aa387498937cc4c765a9c4f25cfc34bfc199865fef624cf365459d9a65",
+    "version": "0.2.6-1",
+    "binaries": ["obscura", "obscura-worker"],
+    "description": "Native Obscura headless browser for Termux (experimental Bionic port)"
+  }
+]
