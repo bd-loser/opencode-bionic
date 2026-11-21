@@ -9,7 +9,7 @@
     "androidArm64Native": "0.8.3"
   },
   "bunTermux": {
-    "version": "1.4.4-patched",
+    "version": "1.4.5-patched",
     "installUrl": "https://raw.githubusercontent.com/bd-loser/bun-termux/main/scripts/install.sh"
   },
   "bunPty": {
